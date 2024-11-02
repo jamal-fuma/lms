@@ -19,8 +19,12 @@
 
 #include "Common.hpp"
 
+#include "database/Image.hpp"
+
 namespace lms::db::tests
 {
+    using ScopedImage = ScopedEntity<db::Image>;
+    using ScopedLabel = ScopedEntity<db::Label>;
     using ScopedReleaseType = ScopedEntity<db::ReleaseType>;
 
     TEST_F(DatabaseFixture, Release)
@@ -248,39 +252,6 @@ namespace lms::db::tests
             auto transaction{ session.createReadTransaction() };
             auto releases{ Release::findIds(session, Release::FindParameters{}.setMediaLibrary(otherLibrary->getId())) };
             EXPECT_EQ(releases.results.size(), 0);
-        }
-    }
-
-    TEST_F(DatabaseFixture, Release_findByNameAndPath)
-    {
-        ScopedRelease release1{ session, "MyRelease" };
-        ScopedRelease release2{ session, "MyRelease" };
-        ScopedTrack track1{ session };
-        ScopedTrack track2{ session };
-
-        {
-            auto transaction{ session.createWriteTransaction() };
-
-            track1.get().modify()->setRelease(release1.get());
-            track1.get().modify()->setAbsoluteFilePath("/tmp/foo/foo.mp3");
-
-            track2.get().modify()->setRelease(release2.get());
-            track2.get().modify()->setAbsoluteFilePath("/tmp/bar/bar.mp3");
-        }
-
-        {
-            auto transaction{ session.createReadTransaction() };
-            {
-                const auto releases{ Release::find(session, "MyRelease", "/tmp/foo") };
-                ASSERT_EQ(releases.size(), 1);
-                EXPECT_EQ(releases.front()->getId(), release1.getId());
-            }
-
-            {
-                const auto releases{ Release::find(session, "MyRelease", "/tmp/bar") };
-                ASSERT_EQ(releases.size(), 1);
-                EXPECT_EQ(releases.front()->getId(), release2.getId());
-            }
         }
     }
 
@@ -639,22 +610,36 @@ namespace lms::db::tests
 
             auto releases{ Release::findIds(session, Release::FindParameters{}.setArtist(artist.getId(), { TrackArtistLinkType::Artist })) };
             EXPECT_EQ(releases.results.size(), 0);
+            EXPECT_EQ(Release::getCount(session, Release::FindParameters{}.setArtist(artist.getId(), { TrackArtistLinkType::Artist })), 0);
+            EXPECT_EQ(Release::getCount(session, Release::FindParameters{}.setArtist(artist.getId())), 0);
 
             releases = Release::findIds(session, Release::FindParameters{}.setArtist(artist2.getId(), { TrackArtistLinkType::Artist }));
             EXPECT_EQ(releases.results.size(), 0);
+            EXPECT_EQ(Release::getCount(session, Release::FindParameters{}.setArtist(artist2.getId(), { TrackArtistLinkType::Artist })), 0);
+            EXPECT_EQ(Release::getCount(session, Release::FindParameters{}.setArtist(artist2.getId())), 0);
         }
 
         {
             auto transaction{ session.createWriteTransaction() };
             TrackArtistLink::create(session, track.get(), artist.get(), TrackArtistLinkType::Artist);
+            TrackArtistLink::create(session, track.get(), artist.get(), TrackArtistLinkType::Producer);
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            EXPECT_EQ(Release::getCount(session, Release::FindParameters{}), 1);
 
             auto releases{ Release::findIds(session, Release::FindParameters{}.setArtist(artist.getId(), { TrackArtistLinkType::Artist })) };
             ASSERT_EQ(releases.results.size(), 1);
             EXPECT_EQ(releases.results.front(), release.getId());
+            EXPECT_EQ(Release::getCount(session, Release::FindParameters{}.setArtist(artist.getId(), { TrackArtistLinkType::Artist })), 1);
+            EXPECT_EQ(Release::getCount(session, Release::FindParameters{}.setArtist(artist.getId(), { TrackArtistLinkType::Remixer })), 0);
 
             releases = Release::findIds(session, Release::FindParameters{}.setArtist(artist.getId(), { TrackArtistLinkType::Artist, TrackArtistLinkType::Mixer }));
             EXPECT_EQ(releases.results.size(), 1);
             EXPECT_EQ(releases.results.front(), release.getId());
+            EXPECT_EQ(Release::getCount(session, Release::FindParameters{}.setArtist(artist.getId(), { TrackArtistLinkType::Artist, TrackArtistLinkType::Mixer })), 1);
 
             releases = Release::findIds(session, Release::FindParameters{}.setArtist(artist2.getId(), { TrackArtistLinkType::Artist }));
             EXPECT_EQ(releases.results.size(), 0);
@@ -669,6 +654,7 @@ namespace lms::db::tests
             releases = Release::findIds(session, Release::FindParameters{}.setArtist(artist.getId()));
             ASSERT_EQ(releases.results.size(), 1);
             EXPECT_EQ(releases.results.front(), release.getId());
+            EXPECT_EQ(Release::getCount(session, Release::FindParameters{}.setArtist(artist.getId())), 1);
 
             releases = Release::findIds(session, Release::FindParameters{}.setArtist(artist.getId(), { TrackArtistLinkType::Composer }));
             EXPECT_EQ(releases.results.size(), 0);
@@ -681,6 +667,58 @@ namespace lms::db::tests
 
             releases = Release::findIds(session, Release::FindParameters{}.setArtist(artist.getId(), {}, { TrackArtistLinkType::Artist, TrackArtistLinkType::Composer }));
             EXPECT_EQ(releases.results.size(), 0);
+        }
+    }
+
+    TEST_F(DatabaseFixture, Release_releaseArtist)
+    {
+        ScopedRelease release{ session, "MyRelease" };
+        ScopedTrack track{ session };
+        ScopedArtist artist{ session, "MyArtist" };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            const auto releases{ Release::findIds(session, Release::FindParameters{}.setArtist(artist.getId(), { TrackArtistLinkType::ReleaseArtist })) };
+            EXPECT_EQ(releases.results.size(), 0);
+            EXPECT_EQ(Release::getCount(session, Release::FindParameters{}.setArtist(artist.getId(), { TrackArtistLinkType::ReleaseArtist })), 0);
+            EXPECT_EQ(Release::getCount(session, Release::FindParameters{}.setArtist(artist.getId())), 0);
+            EXPECT_EQ(release->getArtists(TrackArtistLinkType::ReleaseArtist).size(), 0);
+            EXPECT_EQ(release->getArtistIds(TrackArtistLinkType::ReleaseArtist).size(), 0);
+        }
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            track.get().modify()->setRelease(release.get());
+            TrackArtistLink::create(session, track.get(), artist.get(), TrackArtistLinkType::ReleaseArtist);
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            auto artists{ release->getArtists(TrackArtistLinkType::ReleaseArtist) };
+            ASSERT_EQ(artists.size(), 1);
+            EXPECT_EQ(artists.front()->getId(), artist.getId());
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            auto artists{ release->getArtistIds(TrackArtistLinkType::ReleaseArtist) };
+            ASSERT_EQ(artists.size(), 1);
+            EXPECT_EQ(artists.front(), artist.getId());
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            EXPECT_EQ(Release::getCount(session, Release::FindParameters{}), 1);
+
+            const auto releases{ Release::findIds(session, Release::FindParameters{}.setArtist(artist.getId(), { TrackArtistLinkType::ReleaseArtist })) };
+            ASSERT_EQ(releases.results.size(), 1);
+            EXPECT_EQ(releases.results.front(), release.getId());
+            EXPECT_EQ(Release::getCount(session, Release::FindParameters{}.setArtist(artist.getId(), { TrackArtistLinkType::ReleaseArtist })), 1);
+            EXPECT_EQ(Release::getCount(session, Release::FindParameters{}.setArtist(artist.getId())), 1);
         }
     }
 
@@ -729,6 +767,80 @@ namespace lms::db::tests
         }
     }
 
+    TEST_F(DatabaseFixture, Release_isCompilation)
+    {
+        ScopedRelease release{ session, "MyRelease" };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            EXPECT_FALSE(release.get()->isCompilation());
+        }
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            release.get().modify()->setCompilation(true);
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            EXPECT_TRUE(release.get()->isCompilation());
+        }
+    }
+
+    TEST_F(DatabaseFixture, Label)
+    {
+        {
+            auto transaction{ session.createReadTransaction() };
+            Label::pointer res{ Label::find(session, "label") };
+            EXPECT_EQ(res, Label::pointer{});
+        }
+
+        ScopedLabel label{ session, "MyLabel" };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            Label::pointer res{ Label::find(session, "MyLabel") };
+            EXPECT_EQ(res, label.get());
+        }
+    }
+
+    TEST_F(DatabaseFixture, Label_orphan)
+    {
+        ScopedLabel label{ session, "MyLabel" };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            auto labels{ Label::findOrphanIds(session) };
+            ASSERT_EQ(labels.results.size(), 1);
+            EXPECT_EQ(labels.results.front(), label.getId());
+        }
+
+        ScopedRelease release{ session, "MyRelease" };
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            release.get().modify()->addLabel(label.get());
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            auto labels{ Label::findOrphanIds(session) };
+            EXPECT_EQ(labels.results.size(), 0);
+        }
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            release.get().modify()->clearLabels();
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            auto labels{ Label::findOrphanIds(session) };
+            ASSERT_EQ(labels.results.size(), 1);
+            EXPECT_EQ(labels.results.front(), label.getId());
+        }
+    }
+
     TEST_F(DatabaseFixture, ReleaseType)
     {
         {
@@ -743,6 +855,44 @@ namespace lms::db::tests
             auto transaction{ session.createReadTransaction() };
             ReleaseType::pointer res{ ReleaseType::find(session, "album") };
             EXPECT_EQ(res, releaseType.get());
+        }
+    }
+
+    TEST_F(DatabaseFixture, ReleaseType_orphan)
+    {
+        // Orphan tests
+        ScopedReleaseType releaseType{ session, "album" };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            auto releaseTypes{ ReleaseType::findOrphanIds(session) };
+            ASSERT_EQ(releaseTypes.results.size(), 1);
+            EXPECT_EQ(releaseTypes.results.front(), releaseType.getId());
+        }
+
+        ScopedRelease release{ session, "MyRelease" };
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            release.get().modify()->addReleaseType(releaseType.get());
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            auto releaseTypes{ ReleaseType::findOrphanIds(session) };
+            EXPECT_EQ(releaseTypes.results.size(), 0);
+        }
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            release.get().modify()->clearReleaseTypes();
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            auto releaseTypes{ ReleaseType::findOrphanIds(session) };
+            ASSERT_EQ(releaseTypes.results.size(), 1);
+            EXPECT_EQ(releaseTypes.results.front(), releaseType.getId());
         }
     }
 
@@ -849,10 +999,19 @@ namespace lms::db::tests
         {
             auto transaction{ session.createReadTransaction() };
 
-            const auto releases{ Release::findIds(session, Release::FindParameters{}.setSortMethod(ReleaseSortMethod::Date)) };
+            const auto releases{ Release::findIds(session, Release::FindParameters{}.setSortMethod(ReleaseSortMethod::DateAsc)) };
             ASSERT_EQ(releases.results.size(), 2);
             EXPECT_EQ(releases.results.front(), release2.getId());
             EXPECT_EQ(releases.results.back(), release1.getId());
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            const auto releases{ Release::findIds(session, Release::FindParameters{}.setSortMethod(ReleaseSortMethod::DateDesc)) };
+            ASSERT_EQ(releases.results.size(), 2);
+            EXPECT_EQ(releases.results.front(), release1.getId());
+            EXPECT_EQ(releases.results.back(), release2.getId());
         }
 
         {
@@ -932,6 +1091,30 @@ namespace lms::db::tests
             EXPECT_EQ(release1->getTrackCount(), 2);
             EXPECT_EQ(release2->getTrackCount(), 1);
             EXPECT_EQ(release3->getTrackCount(), 0);
+        }
+    }
+
+    TEST_F(DatabaseFixture, Release_image)
+    {
+        ScopedRelease release{ session, "MyRelease" };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            EXPECT_FALSE(release.get()->getImage());
+        }
+
+        ScopedImage image{ session, "/myImage" };
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            release.get().modify()->setImage(image.get());
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            auto releaseImage(release.get()->getImage());
+            ASSERT_TRUE(releaseImage);
+            EXPECT_EQ(releaseImage->getId(), image.getId());
         }
     }
 } // namespace lms::db::tests

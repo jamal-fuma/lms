@@ -30,6 +30,8 @@
 
 #include "core/UUID.hpp"
 
+#include "Lyrics.hpp"
+
 namespace lms::metadata
 {
     using Tags = std::map<std::string /* type */, std::vector<std::string> /* values */>;
@@ -63,7 +65,9 @@ namespace lms::metadata
         std::string artistDisplayName;
         std::vector<Artist> artists;
         std::optional<std::size_t> mediumCount;
+        std::vector<std::string> labels;
         std::vector<std::string> releaseTypes;
+        bool isCompilation{};
 
         auto operator<=>(const Release&) const = default;
     };
@@ -81,7 +85,7 @@ namespace lms::metadata
 
         bool isDefault() const
         {
-            static Medium defaultMedium;
+            static const Medium defaultMedium;
             return *this == defaultMedium;
         }
     };
@@ -106,7 +110,6 @@ namespace lms::metadata
         std::vector<std::string> groupings;
         std::vector<std::string> genres;
         std::vector<std::string> moods;
-        std::vector<std::string> labels;
         std::vector<std::string> languages;
         Tags userExtraTags;
         std::optional<int> year{};
@@ -117,6 +120,8 @@ namespace lms::metadata
         std::optional<core::UUID> acoustID;
         std::string copyright;
         std::string copyrightURL;
+        std::vector<std::string> comments;
+        std::vector<Lyrics> lyrics;
         std::optional<float> replayGain;
         std::string artistDisplayName;
         std::vector<Artist> artists;

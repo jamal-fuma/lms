@@ -79,7 +79,6 @@ namespace lms::metadata
             { TagType::LyricistSortOrder, { "LYRICISTSORT" } },
             { TagType::Lyricists, { "LYRICISTS" } },
             { TagType::LyricistsSortOrder, { "LYRICISTSSORT" } },
-            { TagType::Lyrics, { "LYRICS" } },
             { TagType::Media, { "TMED", "MEDIA", "WM/MEDIA" } },
             { TagType::MixDJ, { "DJMIXER" } },
             { TagType::Mixer, { "MIXER" } },
@@ -172,15 +171,6 @@ namespace lms::metadata
         }
     }
 
-    size_t AvFormatTagReader::countTagValues(TagType tag) const
-    {
-        size_t count{};
-        visitTagValues(tag, [&](std::string_view) {
-            count++;
-        });
-        return count;
-    }
-
     void AvFormatTagReader::visitTagValues(TagType tag, TagValueVisitor visitor) const
     {
         auto itTagNames{ tagMapping.find(tag) };
@@ -213,6 +203,25 @@ namespace lms::metadata
     void AvFormatTagReader::visitPerformerTags(PerformerVisitor visitor) const
     {
         visitTagValues("PERFORMER", [&](std::string_view value) {
+            visitor("", value);
+        });
+    }
+
+    void AvFormatTagReader::visitLyricsTags(LyricsVisitor visitor) const
+    {
+        // MPEG files: need to visit LYRICS-language entries
+        for (const auto& [tag, value] : _metaDataMap)
+        {
+            constexpr std::string_view lyricsPrefix{ "LYRICS-" };
+            if (tag.starts_with(lyricsPrefix))
+            {
+                const std::string language{ core::stringUtils::stringToLower(tag.substr(lyricsPrefix.size())) };
+                visitor(language, value);
+            }
+        }
+
+        // otherwise, just visit regular LYRICS tag with no language
+        visitTagValues("LYRICS", [&](std::string_view value) {
             visitor("", value);
         });
     }

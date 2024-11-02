@@ -168,7 +168,7 @@ namespace lms::api::subsonic
             { "/getAlbum", { handleGetAlbumRequest } },
             { "/getSong", { handleGetSongRequest } },
             { "/getVideos", { handleNotImplemented } },
-            { "/getArtistInfo", { handleGetArtistInfoRequest } },
+            { "/getArtistInfo", { handleNotImplemented } },
             { "/getArtistInfo2", { handleGetArtistInfo2Request } },
             { "/getAlbumInfo", { handleNotImplemented } },
             { "/getAlbumInfo2", { handleNotImplemented } },
@@ -200,13 +200,14 @@ namespace lms::api::subsonic
             // Media retrieval
             { "/hls", { handleNotImplemented } },
             { "/getCaptions", { handleNotImplemented } },
-            { "/getLyrics", { handleNotImplemented } },
+            { "/getLyrics", { handleGetLyrics } },
+            { "/getLyricsBySongId", { handleGetLyricsBySongId } },
             { "/getAvatar", { handleNotImplemented } },
 
             // Media annotation
             { "/star", { handleStarRequest } },
             { "/unstar", { handleUnstarRequest } },
-            { "/setRating", { handleNotImplemented } },
+            { "/setRating", { handleSetRating } },
             { "/scrobble", { handleScrobble } },
 
             // Sharing
@@ -282,7 +283,7 @@ namespace lms::api::subsonic
     SubsonicResource::SubsonicResource(db::Db& db)
         : _serverProtocolVersionsByClient{ readConfigProtocolVersions() }
         , _openSubsonicDisabledClients{ readOpenSubsonicDisabledClients() }
-        , _defaultCoverClients{ readDefaultCoverClients() }
+        , _defaultReleaseCoverClients{ readDefaultCoverClients() }
         , _db{ db }
     {
     }
@@ -409,8 +410,9 @@ namespace lms::api::subsonic
         const Wt::Http::ParameterMap& parameters{ request.getParameterMap() };
         const ClientInfo clientInfo{ getClientInfo(request) };
         const db::UserId userId{ authenticateUser(request, clientInfo) };
-        bool enableOpenSubsonic{ _openSubsonicDisabledClients.find(clientInfo.name) == std::cend(_openSubsonicDisabledClients) };
-        bool enableDefaultCover{ _defaultCoverClients.find(clientInfo.name) != std::cend(_openSubsonicDisabledClients) };
+        bool enableOpenSubsonic{ !_openSubsonicDisabledClients.contains(clientInfo.name) };
+        bool enableDefaultCover{ _defaultReleaseCoverClients.contains(clientInfo.name) };
+        const ResponseFormat format{ getParameterAs<std::string>(request.getParameterMap(), "f").value_or("xml") == "json" ? ResponseFormat::json : ResponseFormat::xml };
 
         db::User::pointer user;
         {
@@ -422,7 +424,16 @@ namespace lms::api::subsonic
                 throw UserNotAuthorizedError{};
         }
 
-        return { parameters, _db.getTLSSession(), user, clientInfo, getServerProtocolVersion(clientInfo.name), enableOpenSubsonic, enableDefaultCover };
+        return RequestContext{
+            .parameters = parameters,
+            .dbSession = _db.getTLSSession(),
+            .user = user,
+            .clientInfo = clientInfo,
+            .serverProtocolVersion = getServerProtocolVersion(clientInfo.name),
+            .responseFormat = format,
+            .enableOpenSubsonic = enableOpenSubsonic,
+            .enableDefaultCover = enableDefaultCover
+        };
     }
 
     db::UserId SubsonicResource::authenticateUser(const Wt::Http::Request& request, const ClientInfo& clientInfo)

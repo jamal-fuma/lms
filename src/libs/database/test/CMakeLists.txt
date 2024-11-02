@@ -4,8 +4,13 @@ add_executable(test-database
 	Cluster.cpp
 	Common.cpp
 	DatabaseTest.cpp
+	Directory.cpp
+	Image.cpp
 	Listen.cpp
 	Migration.cpp
+	RatedArtist.cpp
+	RatedRelease.cpp
+	RatedTrack.cpp
 	Release.cpp
 	StarredArtist.cpp
 	StarredRelease.cpp
@@ -14,6 +19,7 @@ add_executable(test-database
 	TrackBookmark.cpp
 	TrackFeatures.cpp
 	TrackList.cpp
+	TrackLyrics.cpp
 	User.cpp
 	)
 

@@ -24,6 +24,8 @@
 #include "core/ILogger.hpp"
 #include "database/Artist.hpp"
 #include "database/Cluster.hpp"
+#include "database/Directory.hpp"
+#include "database/Image.hpp"
 #include "database/Session.hpp"
 #include "database/Track.hpp"
 #include "database/User.hpp"
@@ -41,24 +43,39 @@ namespace lms::db
         template<typename ResultType>
         Wt::Dbo::Query<ResultType> createQuery(Session& session, std::string_view itemToSelect, const Release::FindParameters& params)
         {
+            assert(params.keywords.empty() || params.name.empty());
+            assert(!params.directory.isValid() || !params.parentDirectory.isValid());
+
             auto query{ session.getDboSession()->query<ResultType>("SELECT " + std::string{ itemToSelect } + " from release r") };
 
             if (params.sortMethod == ReleaseSortMethod::ArtistNameThenName
                 || params.sortMethod == ReleaseSortMethod::LastWritten
-                || params.sortMethod == ReleaseSortMethod::Date
+                || params.sortMethod == ReleaseSortMethod::DateAsc
+                || params.sortMethod == ReleaseSortMethod::DateDesc
                 || params.sortMethod == ReleaseSortMethod::OriginalDate
                 || params.sortMethod == ReleaseSortMethod::OriginalDateDesc
                 || params.writtenAfter.isValid()
                 || params.dateRange
                 || params.artist.isValid()
                 || params.clusters.size() == 1
-                || params.mediaLibrary.isValid())
+                || params.mediaLibrary.isValid()
+                || params.directory.isValid()
+                || params.parentDirectory.isValid())
             {
                 query.join("track t ON t.release_id = r.id");
             }
 
+            if (params.parentDirectory.isValid())
+            {
+                query.join("directory d ON t.directory_id = d.id");
+                query.where("d.parent_directory_id = ?").bind(params.parentDirectory);
+            }
+
             if (params.mediaLibrary.isValid())
                 query.where("t.media_library_id = ?").bind(params.mediaLibrary);
+
+            if (params.directory.isValid())
+                query.where("t.directory_id = ?").bind(params.directory);
 
             if (!params.releaseType.empty())
             {
@@ -76,6 +93,9 @@ namespace lms::db
                 query.where("COALESCE(CAST(SUBSTR(t.date, 1, 4) AS INTEGER), t.year) >= ?").bind(params.dateRange->begin);
                 query.where("COALESCE(CAST(SUBSTR(t.date, 1, 4) AS INTEGER), t.year) <= ?").bind(params.dateRange->end);
             }
+
+            if (!params.name.empty())
+                query.where("r.name = ?").bind(params.name);
 
             for (std::string_view keyword : params.keywords)
                 query.where("r.name LIKE ? ESCAPE '" ESCAPE_CHAR_STR "'").bind("%" + utils::escapeLikeKeyword(keyword) + "%");
@@ -189,8 +209,11 @@ namespace lms::db
             case ReleaseSortMethod::LastWritten:
                 query.orderBy("t.file_last_write DESC");
                 break;
-            case ReleaseSortMethod::Date:
-                query.orderBy("COALESCE(t.date, CAST(t.year AS TEXT)), r.name COLLATE NOCASE");
+            case ReleaseSortMethod::DateAsc:
+                query.orderBy("COALESCE(t.date, CAST(t.year AS TEXT)) ASC, r.name COLLATE NOCASE");
+                break;
+            case ReleaseSortMethod::DateDesc:
+                query.orderBy("COALESCE(t.date, CAST(t.year AS TEXT)) DESC, r.name COLLATE NOCASE");
                 break;
             case ReleaseSortMethod::OriginalDate:
                 query.orderBy("COALESCE(original_date, CAST(original_year AS TEXT), date, CAST(year AS TEXT)), r.name COLLATE NOCASE");
@@ -206,11 +229,75 @@ namespace lms::db
 
             return query;
         }
+
+        template<typename ResultType>
+        Wt::Dbo::Query<ResultType> createArtistQuery(Wt::Dbo::Session& session, std::string_view itemToSelect, ReleaseId releaseId, TrackArtistLinkType linkType)
+        {
+            auto query{ session.query<ResultType>("SELECT " + std::string{ itemToSelect } + " from artist a")
+                            .join("track_artist_link t_a_l ON t_a_l.artist_id = a.id")
+                            .join("track t ON t.id = t_a_l.track_id")
+                            .where("t.release_id = ?")
+                            .bind(releaseId)
+                            .where("+t_a_l.type = ?")
+                            .bind(linkType) // adding + since the query planner does not a good job when analyze is not performed
+                            .groupBy("a.id")
+                            .orderBy("t_a_l.id") };
+
+            return query;
+        };
+
     } // namespace
 
-    ReleaseType::ReleaseType(std::string_view name)
-        : _name{ std::string(name, 0, _maxNameLength) }
+    Label::Label(std::string_view name)
+        : _name{ name }
     {
+        // As we use the name to uniquely identoify release type, we must throw (and not truncate)
+        if (name.size() > _maxNameLength)
+            throw Exception{ "Label name is too long: " + std::string{ name } + "'" };
+    }
+
+    Label::pointer Label::create(Session& session, std::string_view name)
+    {
+        return session.getDboSession()->add(std::unique_ptr<Label>{ new Label{ name } });
+    }
+
+    std::size_t Label::getCount(Session& session)
+    {
+        return utils::fetchQuerySingleResult(session.getDboSession()->query<int>("SELECT COUNT(*) FROM label"));
+    }
+
+    Label::pointer Label::find(Session& session, LabelId id)
+    {
+        session.checkReadTransaction();
+
+        return utils::fetchQuerySingleResult(session.getDboSession()->query<Wt::Dbo::ptr<Label>>("SELECT l from label l").where("l.id = ?").bind(id));
+    }
+
+    Label::pointer Label::find(Session& session, std::string_view name)
+    {
+        session.checkReadTransaction();
+
+        if (name.size() > _maxNameLength)
+            throw Exception{ "Requeted Label name is too long: " + std::string{ name } + "'" };
+
+        return utils::fetchQuerySingleResult(session.getDboSession()->query<Wt::Dbo::ptr<Label>>("SELECT l from label l").where("l.name = ?").bind(name));
+    }
+
+    RangeResults<LabelId> Label::findOrphanIds(Session& session, std::optional<Range> range)
+    {
+        session.checkReadTransaction();
+
+        // select the labels that have no releases
+        auto query{ session.getDboSession()->query<LabelId>("select l.id from label l LEFT OUTER JOIN release_label r_l ON l.id = r_l.label_id WHERE r_l.release_id IS NULL") };
+        return utils::execRangeQuery<LabelId>(query, range);
+    }
+
+    ReleaseType::ReleaseType(std::string_view name)
+        : _name{ name }
+    {
+        // As we use the name to uniquely identoify release type, we must throw (and not truncate)
+        if (name.size() > _maxNameLength)
+            throw Exception{ "ReleaseType name is too long: " + std::string{ name } + "'" };
     }
 
     ReleaseType::pointer ReleaseType::create(Session& session, std::string_view name)
@@ -218,18 +305,35 @@ namespace lms::db
         return session.getDboSession()->add(std::unique_ptr<ReleaseType>{ new ReleaseType{ name } });
     }
 
+    std::size_t ReleaseType::getCount(Session& session)
+    {
+        return utils::fetchQuerySingleResult(session.getDboSession()->query<int>("SELECT COUNT(*) FROM release_type"));
+    }
+
     ReleaseType::pointer ReleaseType::find(Session& session, ReleaseTypeId id)
     {
         session.checkReadTransaction();
 
-        return utils::fetchQuerySingleResult(session.getDboSession()->find<ReleaseType>().where("id = ?").bind(id));
+        return utils::fetchQuerySingleResult(session.getDboSession()->query<Wt::Dbo::ptr<ReleaseType>>("SELECT r_t from release_type r_t").where("r_t.id = ?").bind(id));
     }
 
     ReleaseType::pointer ReleaseType::find(Session& session, std::string_view name)
     {
         session.checkReadTransaction();
 
-        return utils::fetchQuerySingleResult(session.getDboSession()->find<ReleaseType>().where("name = ?").bind(name));
+        if (name.size() > _maxNameLength)
+            throw Exception{ "Requeted ReleaseType name is too long: " + std::string{ name } + "'" };
+
+        return utils::fetchQuerySingleResult(session.getDboSession()->query<Wt::Dbo::ptr<ReleaseType>>("SELECT r_t from release_type r_t").where("r_t.name = ?").bind(name));
+    }
+
+    RangeResults<ReleaseTypeId> ReleaseType::findOrphanIds(Session& session, std::optional<Range> range)
+    {
+        session.checkReadTransaction();
+
+        // select the release types that have no releases
+        auto query{ session.getDboSession()->query<ReleaseTypeId>("select r_t.id from release_type r_t LEFT OUTER JOIN release_release_type r_r_t ON r_t.id = r_r_t.release_type_id WHERE r_r_t.release_id IS NULL") };
+        return utils::execRangeQuery<ReleaseTypeId>(query, range);
     }
 
     Release::Release(const std::string& name, const std::optional<core::UUID>& MBID)
@@ -243,25 +347,18 @@ namespace lms::db
         return session.getDboSession()->add(std::unique_ptr<Release>{ new Release{ name, MBID } });
     }
 
-    std::vector<Release::pointer> Release::find(Session& session, const std::string& name, const std::filesystem::path& releaseDirectory)
-    {
-        session.checkReadTransaction();
-
-        return utils::fetchQueryResults<Release::pointer>(session.getDboSession()->query<Wt::Dbo::ptr<Release>>("SELECT DISTINCT r from release r").join("track t ON t.release_id = r.id").where("r.name = ?").bind(std::string(name, 0, _maxNameLength)).where("t.absolute_file_path LIKE ? ESCAPE '" ESCAPE_CHAR_STR "'").bind(utils::escapeLikeKeyword(releaseDirectory.string()) + "%"));
-    }
-
     Release::pointer Release::find(Session& session, const core::UUID& mbid)
     {
         session.checkReadTransaction();
 
-        return utils::fetchQuerySingleResult(session.getDboSession()->find<Release>().where("mbid = ?").bind(mbid.getAsString()));
+        return utils::fetchQuerySingleResult(session.getDboSession()->query<Wt::Dbo::ptr<Release>>("SELECT r from release r").where("r.mbid = ?").bind(mbid.getAsString()));
     }
 
     Release::pointer Release::find(Session& session, ReleaseId id)
     {
         session.checkReadTransaction();
 
-        return utils::fetchQuerySingleResult(session.getDboSession()->find<Release>().where("id = ?").bind(id));
+        return utils::fetchQuerySingleResult(session.getDboSession()->query<Wt::Dbo::ptr<Release>>("SELECT r from release r").where("r.id = ?").bind(id));
     }
 
     bool Release::exists(Session& session, ReleaseId id)
@@ -331,7 +428,7 @@ namespace lms::db
     {
         session.checkReadTransaction();
 
-        return utils::fetchQuerySingleResult(createQuery<int>(session, "COUNT(r.id)", params));
+        return utils::fetchQuerySingleResult(createQuery<int>(session, "COUNT(DISTINCT r.id)", params));
     }
 
     std::size_t Release::getDiscCount() const
@@ -450,17 +547,16 @@ namespace lms::db
     {
         assert(session());
 
-        const auto query{ session()->query<Wt::Dbo::ptr<Artist>>(
-                                       "SELECT a FROM artist a"
-                                       " INNER JOIN track_artist_link t_a_l ON t_a_l.artist_id = a.id"
-                                       " INNER JOIN track t ON t.id = t_a_l.track_id")
-                              .where("t.release_id = ?")
-                              .bind(getId())
-                              .where("+t_a_l.type = ?")
-                              .bind(linkType) // adding + since the query planner does not a good job when analyze is not performed
-                              .groupBy("a.id") };
-
+        const auto query{ createArtistQuery<Wt::Dbo::ptr<Artist>>(*session(), "a", getId(), linkType) };
         return utils::fetchQueryResults<Artist::pointer>(query);
+    }
+
+    std::vector<ArtistId> Release::getArtistIds(TrackArtistLinkType linkType) const
+    {
+        assert(session());
+
+        const auto query{ createArtistQuery<ArtistId>(*session(), "a.id", getId(), linkType) };
+        return utils::fetchQueryResults(query);
     }
 
     std::vector<Release::pointer> Release::getSimilarReleases(std::optional<std::size_t> offset, std::optional<std::size_t> count) const
@@ -490,9 +586,24 @@ namespace lms::db
         return utils::fetchQueryResults<Release::pointer>(query);
     }
 
+    ObjectPtr<Image> Release::getImage() const
+    {
+        return ObjectPtr<Image>{ _image };
+    }
+
+    void Release::clearLabels()
+    {
+        _labels.clear();
+    }
+
     void Release::clearReleaseTypes()
     {
         _releaseTypes.clear();
+    }
+
+    void Release::addLabel(ObjectPtr<Label> label)
+    {
+        _labels.insert(getDboPtr(label));
     }
 
     void Release::addReleaseType(ObjectPtr<ReleaseType> releaseType)
@@ -500,10 +611,20 @@ namespace lms::db
         _releaseTypes.insert(getDboPtr(releaseType));
     }
 
+    void Release::setImage(ObjectPtr<Image> image)
+    {
+        _image = getDboPtr(image);
+    }
+
     bool Release::hasVariousArtists() const
     {
         // TODO optimize
         return getArtists().size() > 1;
+    }
+
+    bool Release::hasDiscSubtitle() const
+    {
+        return utils::fetchQuerySingleResult(session()->query<int>("SELECT EXISTS (SELECT 1 FROM track WHERE disc_subtitle IS NOT NULL AND disc_subtitle <> '' AND release_id = ?)").bind(getId()));
     }
 
     std::size_t Release::getTrackCount() const
@@ -518,6 +639,16 @@ namespace lms::db
         return utils::fetchQueryResults<ReleaseType::pointer>(_releaseTypes.find());
     }
 
+    std::vector<std::string> Release::getLabelNames() const
+    {
+        std::vector<std::string> res;
+
+        for (const auto& label : _labels)
+            res.push_back(std::string{ label->getName() });
+
+        return res;
+    }
+
     std::vector<std::string> Release::getReleaseTypeNames() const
     {
         std::vector<std::string> res;
@@ -526,6 +657,13 @@ namespace lms::db
             res.push_back(std::string{ releaseType->getName() });
 
         return res;
+    }
+
+    void Release::visitLabels(const std::function<void(const Label::pointer& label)>& _func) const
+    {
+        assert(session());
+        auto query{ _labels.find() };
+        utils::forEachQueryResult(query, _func);
     }
 
     std::chrono::milliseconds Release::getDuration() const
@@ -583,5 +721,4 @@ namespace lms::db
 
         return res;
     }
-
 } // namespace lms::db

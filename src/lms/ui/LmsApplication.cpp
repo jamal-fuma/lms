@@ -37,9 +37,9 @@
 #include "database/Session.hpp"
 #include "database/TrackList.hpp"
 #include "database/User.hpp"
+#include "services/artwork/IArtworkService.hpp"
 #include "services/auth/IEnvService.hpp"
 #include "services/auth/IPasswordService.hpp"
-#include "services/cover/ICoverService.hpp"
 #include "services/scrobbling/IScrobblingService.hpp"
 
 #include "Auth.hpp"
@@ -61,9 +61,9 @@
 #include "common/Template.hpp"
 #include "explore/Explore.hpp"
 #include "explore/Filters.hpp"
+#include "resource/ArtworkResource.hpp"
 #include "resource/AudioFileResource.hpp"
 #include "resource/AudioTranscodingResource.hpp"
-#include "resource/CoverResource.hpp"
 
 namespace lms::ui
 {
@@ -109,6 +109,18 @@ namespace lms::ui
         {
             static std::shared_ptr<Wt::WMessageResourceBundle> res{ createMessageResourceBundle() };
             return res;
+        }
+
+        Wt::WLocale createLocale(const std::string& name)
+        {
+            Wt::WLocale locale{ name };
+            locale.setDecimalPoint(Wt::WString::tr("Lms.locale.decimal-point").toUTF8());
+            locale.setGroupSeparator(Wt::WString::tr("Lms.locale.group-separator").toUTF8());
+            locale.setDateFormat(Wt::WString::tr("Lms.locale.date-format").toUTF8());
+            locale.setTimeFormat(Wt::WString::tr("Lms.locale.time-format").toUTF8());
+            locale.setDateTimeFormat(Wt::WString::tr("Lms.locale.date-time-format").toUTF8());
+
+            return locale;
         }
 
         enum IdxRoot
@@ -207,34 +219,34 @@ namespace lms::ui
 
     db::User::pointer LmsApplication::getUser()
     {
-        if (!_authenticatedUser)
+        if (!_user)
             return {};
 
-        return db::User::find(getDbSession(), _authenticatedUser->userId);
+        return db::User::find(getDbSession(), _user->userId);
     }
 
-    db::UserId LmsApplication::getUserId()
+    db::UserId LmsApplication::getUserId() const
     {
-        return _authenticatedUser->userId;
+        assert(_user);
+        return _user->userId;
     }
 
     bool LmsApplication::isUserAuthStrong() const
     {
-        return _authenticatedUser->strongAuth;
+        assert(_user);
+        return _user->strongAuth;
     }
 
-    db::UserType LmsApplication::getUserType()
+    db::UserType LmsApplication::getUserType() const
     {
-        auto transaction{ getDbSession().createReadTransaction() };
-
-        return getUser()->getType();
+        assert(_user);
+        return _user->userType;
     }
 
-    std::string LmsApplication::getUserLoginName()
+    std::string_view LmsApplication::getUserLoginName() const
     {
-        auto transaction{ getDbSession().createReadTransaction() };
-
-        return getUser()->getLoginName();
+        assert(_user);
+        return _user->userLoginName;
     }
 
     LmsApplication::LmsApplication(const Wt::WEnvironment& env,
@@ -244,11 +256,10 @@ namespace lms::ui
         : Wt::WApplication{ env }
         , _db{ db }
         , _appManager{ appManager }
-        , _authenticatedUser{ userId ? std::make_optional<UserAuthInfo>(UserAuthInfo{ *userId, false }) : std::nullopt }
     {
         try
         {
-            init();
+            init(userId);
         }
         catch (LmsApplicationException& e)
         {
@@ -264,7 +275,7 @@ namespace lms::ui
 
     LmsApplication::~LmsApplication() = default;
 
-    void LmsApplication::init()
+    void LmsApplication::init(std::optional<db::UserId> userId)
     {
         LMS_SCOPED_TRACE_OVERVIEW("UI", "ApplicationInit");
 
@@ -275,12 +286,13 @@ namespace lms::ui
 
         setTitle();
         setLocalizedStrings(getOrCreateMessageBundle());
+        setLocale(createLocale(Wt::WLocale::currentLocale().name()));
 
         // Handle Media Scanner events and other session events
         enableUpdates(true);
 
-        if (_authenticatedUser)
-            onUserLoggedIn();
+        if (userId)
+            onUserLoggedIn(*userId, false /* strongAuth */);
         else if (core::Service<auth::IPasswordService>::exists())
             processPasswordAuth();
     }
@@ -292,8 +304,7 @@ namespace lms::ui
             if (userId)
             {
                 LMS_LOG(UI, DEBUG, "User authenticated using Auth token!");
-                _authenticatedUser = { *userId, false };
-                onUserLoggedIn();
+                onUserLoggedIn(*userId, false /* strongAuth */);
                 return;
             }
         }
@@ -315,15 +326,14 @@ namespace lms::ui
         {
             Auth* auth{ root()->addNew<Auth>() };
             auth->userLoggedIn.connect(this, [this](db::UserId userId) {
-                _authenticatedUser = { userId, true };
-                onUserLoggedIn();
+                onUserLoggedIn(userId, true /* strongAuth */);
             });
         }
     }
 
     void LmsApplication::finalize()
     {
-        if (_authenticatedUser)
+        if (_user)
             _appManager.unregisterApplication(*this);
 
         preQuit().emit();
@@ -359,11 +369,13 @@ namespace lms::ui
         goHomeAndQuit();
     }
 
-    void LmsApplication::onUserLoggedIn()
+    void LmsApplication::onUserLoggedIn(db::UserId userId, bool strongAuth)
     {
         root()->clear();
 
-        LMS_LOG(UI, INFO, "User '" << getUserLoginName() << "' logged in from '" << environment().clientAddress() << "', user agent = " << environment().userAgent());
+        setUserInfo(userId, strongAuth);
+
+        LMS_LOG(UI, INFO, "User '" << getUserLoginName() << "' logged in from '" << environment().clientAddress() << "', user agent = " << environment().userAgent() << ", locale = '" << locale().name() << "'");
 
         _appManager.registerApplication(*this);
         _appManager.applicationRegistered.connect(this, [this](LmsApplication& otherApplication) {
@@ -380,11 +392,28 @@ namespace lms::ui
         createHome();
     }
 
+    void LmsApplication::setUserInfo(db::UserId userId, bool strongAuth)
+    {
+        auto transaction{ getDbSession().createReadTransaction() };
+
+        const db::User::pointer user{ db::User::find(getDbSession(), userId) };
+        if (!user)
+            throw core::LmsException{ "Internal error" }; // Do not put details here at it may appear on the user rendered html
+
+        assert(!_user);
+        _user = UserAuthInfo{
+            .userId = userId,
+            .userType = user->getType(),
+            .userLoginName = user->getLoginName(),
+            .strongAuth = strongAuth
+        };
+    }
+
     void LmsApplication::createHome()
     {
         LMS_SCOPED_TRACE_OVERVIEW("UI", "ApplicationCreateHome");
 
-        _coverResource = std::make_shared<CoverResource>();
+        _artworkResource = std::make_shared<ArtworkResource>();
 
         declareJavaScriptFunction("onLoadCover", "function(id) { id.className += \" Lms-cover-loaded\"}");
         declareJavaScriptFunction("updateActiveNav",
@@ -420,7 +449,7 @@ namespace lms::ui
         navbar->bindNew<Wt::WAnchor>("tracklists", Wt::WLink{ Wt::LinkType::InternalPath, "/tracklists" }, Wt::WString::tr("Lms.Explore.tracklists"));
 
         Filters* filters{ navbar->bindNew<Filters>("filters") };
-        navbar->bindString("username", getUserLoginName(), Wt::TextFormat::Plain);
+        navbar->bindString("username", std::string{ getUserLoginName() }, Wt::TextFormat::Plain);
         navbar->bindNew<Wt::WAnchor>("settings", Wt::WLink{ Wt::LinkType::InternalPath, "/settings" }, Wt::WString::tr("Lms.Settings.menu-settings"));
 
         {

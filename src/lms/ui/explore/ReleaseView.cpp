@@ -245,7 +245,7 @@ namespace lms::ui
 
         refreshReleaseArtists(release);
 
-        bindWidget<Wt::WImage>("cover", utils::createCover(release->getId(), CoverResource::Size::Large));
+        bindWidget<Wt::WImage>("cover", utils::createReleaseCover(release->getId(), ArtworkResource::Size::Large));
 
         Wt::WContainerWidget* clusterContainers{ bindNew<Wt::WContainerWidget>("clusters") };
         {
@@ -321,7 +321,8 @@ namespace lms::ui
         const bool variousArtists{ release->hasVariousArtists() };
         const auto totalDisc{ release->getTotalDisc() };
         const std::size_t discCount{ release->getDiscCount() };
-        const bool isReleaseMultiDisc{ (discCount > 1) || (totalDisc && *totalDisc > 1) };
+        const bool hasDiscSubtitle{ release->hasDiscSubtitle() };
+        const bool useSubtitleContainers{ (discCount > 1) || (totalDisc && *totalDisc > 1) || hasDiscSubtitle };
 
         // Expect to be called in asc order
         std::map<std::size_t, Wt::WContainerWidget*> trackContainers;
@@ -392,8 +393,10 @@ namespace lms::ui
             const auto discNumber{ track->getDiscNumber() };
 
             Wt::WContainerWidget* container;
-            if (isReleaseMultiDisc && discNumber)
+            if (useSubtitleContainers && discNumber)
                 container = getOrAddDiscContainer(*discNumber, track->getDiscSubtitle());
+            else if (hasDiscSubtitle && !discNumber)
+                container = getOrAddDiscContainer(0, track->getDiscSubtitle());
             else
                 container = getOrAddNoDiscContainer();
 
@@ -463,6 +466,14 @@ namespace lms::ui
                 entry->bindNew<Wt::WPushButton>("track-info", Wt::WString::tr("Lms.Explore.track-info"))
                     ->clicked()
                     .connect([this, trackId] { TrackListHelpers::showTrackInfoModal(trackId, _filters); });
+
+                if (track->hasLyrics())
+                {
+                    entry->setCondition("if-has-lyrics", true);
+                    entry->bindNew<Wt::WPushButton>("track-lyrics", Wt::WString::tr("Lms.Explore.track-lyrics"))
+                        ->clicked()
+                        .connect([trackId] { TrackListHelpers::showTrackLyricsModal(trackId); });
+                }
             }
 
             entry->bindString("duration", utils::durationToString(track->getDuration()), Wt::TextFormat::Plain);

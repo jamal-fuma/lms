@@ -25,8 +25,16 @@
 
 #include <Wt/WDate.h>
 
+#include "core/Exception.hpp"
+
 namespace lms::db
 {
+    class Exception : public core::LmsException
+    {
+    public:
+        using LmsException::LmsException;
+    };
+
     // Caution: do not change enum values if they are set!
 
     // Request:
@@ -129,7 +137,8 @@ namespace lms::db
         Id,
         Name,
         ArtistNameThenName,
-        Date,
+        DateAsc,
+        DateDesc,
         OriginalDate,
         OriginalDateDesc,
         Random,
@@ -155,6 +164,13 @@ namespace lms::db
         DateDescAndRelease,
         Release,   // order by disc/track number
         TrackList, // order by asc order in tracklist
+    };
+
+    enum class TrackLyricsSortMethod
+    {
+        None,
+        ExternalFirst,
+        EmbeddedFirst,
     };
 
     enum class TrackArtistLinkType
@@ -186,6 +202,8 @@ namespace lms::db
     // Do not remove values!
     void visitAllowedAudioBitrates(std::function<void(Bitrate)>);
     bool isAudioBitrateAllowed(Bitrate bitrate);
+
+    using Rating = int;
 
     enum class ScrobblingBackend
     {

@@ -20,6 +20,8 @@
 #pragma once
 
 #include <filesystem>
+#include <map>
+#include <string>
 
 #include <taglib/fileref.h>
 #include <taglib/tpropertymap.h>
@@ -40,10 +42,10 @@ namespace lms::metadata
         TagLibTagReader& operator=(const TagLibTagReader&) = delete;
 
         void computeAudioProperties();
-        size_t countTagValues(TagType tag) const override;
         void visitTagValues(TagType tag, TagValueVisitor visitor) const override;
         void visitTagValues(std::string_view tag, TagValueVisitor visitor) const override;
         void visitPerformerTags(PerformerVisitor visitor) const override;
+        void visitLyricsTags(LyricsVisitor visitor) const override;
         bool hasEmbeddedCover() const override { return _hasEmbeddedCover; }
 
         const AudioProperties& getAudioProperties() const override { return _audioProperties; }
@@ -52,5 +54,6 @@ namespace lms::metadata
         AudioProperties _audioProperties;
         TagLib::PropertyMap _propertyMap; // case-insensitive keys
         bool _hasEmbeddedCover{};
+        std::multimap<std::string /* language*/, std::string /* lyrics */> _id3v2Lyrics;
     };
 } // namespace lms::metadata

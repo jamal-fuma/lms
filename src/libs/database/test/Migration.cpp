@@ -18,8 +18,20 @@
  */
 
 #include "Common.hpp"
+
 #include "core/String.hpp"
 #include "database/Db.hpp"
+#include "database/Directory.hpp"
+#include "database/Image.hpp"
+#include "database/RatedArtist.hpp"
+#include "database/RatedRelease.hpp"
+#include "database/RatedTrack.hpp"
+#include "database/StarredArtist.hpp"
+#include "database/StarredRelease.hpp"
+#include "database/StarredTrack.hpp"
+#include "database/TrackLyrics.hpp"
+#include "database/UIState.hpp"
+#include "database/User.hpp"
 
 namespace lms::db::tests
 {
@@ -318,5 +330,31 @@ VALUES
 
         // Now perform full migration
         db.getTLSSession().migrateSchemaIfNeeded();
+
+        // Now perform some dummy finds to ensure all fields are correctly mapped
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            EXPECT_FALSE(Artist::find(session, ArtistId{}));
+            EXPECT_FALSE(Cluster::find(session, ClusterId{}));
+            EXPECT_FALSE(ClusterType::find(session, ClusterTypeId{}));
+            EXPECT_FALSE(Directory::find(session, DirectoryId{}));
+            EXPECT_FALSE(Image::find(session, ImageId{}));
+            EXPECT_FALSE(Label::find(session, LabelId{}));
+            EXPECT_FALSE(Listen::find(session, ListenId{}));
+            EXPECT_FALSE(RatedArtist::find(session, RatedArtistId{}));
+            EXPECT_FALSE(RatedRelease::find(session, RatedReleaseId{}));
+            EXPECT_FALSE(RatedTrack::find(session, RatedTrackId{}));
+            EXPECT_FALSE(Release::find(session, ReleaseId{}));
+            EXPECT_FALSE(ReleaseType::find(session, ReleaseTypeId{}));
+            EXPECT_FALSE(StarredArtist::find(session, StarredArtistId{}));
+            EXPECT_FALSE(StarredRelease::find(session, StarredReleaseId{}));
+            EXPECT_FALSE(StarredTrack::find(session, StarredTrackId{}));
+            EXPECT_FALSE(Track::find(session, TrackId{}));
+            EXPECT_FALSE(TrackList::find(session, TrackListId{}));
+            EXPECT_FALSE(TrackLyrics::find(session, TrackLyricsId{}));
+            EXPECT_FALSE(UIState::find(session, UIStateId{}));
+            EXPECT_FALSE(User::find(session, UserId{}));
+        }
     }
 } // namespace lms::db::tests

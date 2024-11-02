@@ -3,12 +3,17 @@ add_library(lmsdatabase SHARED
 	impl/AuthToken.cpp
 	impl/Cluster.cpp
 	impl/Db.cpp
+	impl/Directory.cpp
+	impl/Image.cpp
 	impl/Listen.cpp
 	impl/MediaLibrary.cpp
 	impl/Migration.cpp
 	impl/TrackArtistLink.cpp
 	impl/TrackFeatures.cpp
 	impl/TrackList.cpp
+	impl/RatedArtist.cpp
+	impl/RatedRelease.cpp
+	impl/RatedTrack.cpp
 	impl/Release.cpp
 	impl/ScanSettings.cpp
 	impl/Session.cpp
@@ -18,7 +23,9 @@ add_library(lmsdatabase SHARED
 	impl/SqlQuery.cpp
 	impl/Track.cpp
 	impl/TrackBookmark.cpp
+	impl/TrackLyrics.cpp
 	impl/Types.cpp
+	impl/UIState.cpp
 	impl/User.cpp
 	impl/Utils.cpp
 	)

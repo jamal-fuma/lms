@@ -22,6 +22,7 @@
 #include "database/Artist.hpp"
 #include "database/Cluster.hpp"
 #include "database/Db.hpp"
+#include "database/Image.hpp"
 #include "database/Listen.hpp"
 #include "database/MediaLibrary.hpp"
 #include "database/Release.hpp"
@@ -79,9 +80,12 @@ namespace lms::db::tests
         EXPECT_EQ(Artist::getCount(session), 0);
         EXPECT_EQ(Cluster::getCount(session), 0);
         EXPECT_EQ(ClusterType::getCount(session), 0);
+        EXPECT_EQ(Label::getCount(session), 0);
         EXPECT_EQ(Listen::getCount(session), 0);
+        EXPECT_EQ(Image::getCount(session), 0);
         EXPECT_EQ(MediaLibrary::getCount(session), 0);
         EXPECT_EQ(Release::getCount(session), 0);
+        EXPECT_EQ(ReleaseType::getCount(session), 0);
         EXPECT_EQ(StarredArtist::getCount(session), 0);
         EXPECT_EQ(StarredRelease::getCount(session), 0);
         EXPECT_EQ(StarredTrack::getCount(session), 0);

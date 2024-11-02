@@ -35,6 +35,7 @@ namespace lms::db
 {
     class AuthToken;
     class Session;
+    class UIState;
 
     class User final : public Object<User, UserId>
     {
@@ -68,12 +69,13 @@ namespace lms::db
             }
         };
 
-        static inline constexpr std::size_t MinNameLength{ 3 };
-        static inline constexpr std::size_t MaxNameLength{ 15 };
+        static inline constexpr std::size_t minNameLength{ 3 };
+        static inline constexpr std::size_t maxNameLength{ 32 };
         static inline constexpr bool defaultSubsonicEnableTranscodingByDefault{ false };
         static inline constexpr TranscodingOutputFormat defaultSubsonicTranscodingOutputFormat{ TranscodingOutputFormat::OGG_OPUS };
         static inline constexpr Bitrate defaultSubsonicTranscodingOutputBitrate{ 128000 };
         static inline constexpr UITheme defaultUITheme{ UITheme::Dark };
+        static inline constexpr ReleaseSortMethod _defaultUIArtistReleaseSortMethod{ ReleaseSortMethod::OriginalDateDesc };
         static inline constexpr SubsonicArtistListMode defaultSubsonicArtistListMode{ SubsonicArtistListMode::AllArtists };
         static inline constexpr ScrobblingBackend defaultScrobblingBackend{ ScrobblingBackend::Internal };
         static inline constexpr FeedbackBackend defaultFeedbackBackend{ FeedbackBackend::Internal };
@@ -104,10 +106,8 @@ namespace lms::db
         void setSubsonicEnableTranscodingByDefault(bool value) { _subsonicEnableTranscodingByDefault = value; }
         void setSubsonicDefaultTranscodintOutputFormat(TranscodingOutputFormat encoding) { _subsonicDefaultTranscodingOutputFormat = encoding; }
         void setSubsonicDefaultTranscodingOutputBitrate(Bitrate bitrate);
-        void setCurPlayingTrackPos(std::size_t pos) { _curPlayingTrackPos = pos; }
-        void setRadio(bool val) { _radio = val; }
-        void setRepeatAll(bool val) { _repeatAll = val; }
         void setUITheme(UITheme uiTheme) { _uiTheme = uiTheme; }
+        void setUIArtistReleaseSortMethod(ReleaseSortMethod method) { _uiArtistReleaseSortMethod = method; }
         void clearAuthTokens();
         void setSubsonicArtistListMode(SubsonicArtistListMode mode) { _subsonicArtistListMode = mode; }
         void setFeedbackBackend(FeedbackBackend feedbackBackend) { _feedbackBackend = feedbackBackend; }
@@ -121,10 +121,8 @@ namespace lms::db
         bool getSubsonicEnableTranscodingByDefault() const { return _subsonicEnableTranscodingByDefault; }
         TranscodingOutputFormat getSubsonicDefaultTranscodingOutputFormat() const { return _subsonicDefaultTranscodingOutputFormat; }
         Bitrate getSubsonicDefaultTranscodingOutputBitrate() const { return _subsonicDefaultTranscodingOutputBitrate; }
-        std::size_t getCurPlayingTrackPos() const { return _curPlayingTrackPos; }
-        bool isRepeatAllSet() const { return _repeatAll; }
-        bool isRadioSet() const { return _radio; }
         UITheme getUITheme() const { return _uiTheme; }
+        ReleaseSortMethod getUIArtistReleaseSortMethod() const { return _uiArtistReleaseSortMethod; }
         SubsonicArtistListMode getSubsonicArtistListMode() const { return _subsonicArtistListMode; }
         FeedbackBackend getFeedbackBackend() const { return _feedbackBackend; }
         ScrobblingBackend getScrobblingBackend() const { return _scrobblingBackend; }
@@ -143,16 +141,13 @@ namespace lms::db
             Wt::Dbo::field(a, _subsonicDefaultTranscodingOutputBitrate, "subsonic_default_transcode_bitrate");
             Wt::Dbo::field(a, _subsonicArtistListMode, "subsonic_artist_list_mode");
             Wt::Dbo::field(a, _uiTheme, "ui_theme");
+            Wt::Dbo::field(a, _uiArtistReleaseSortMethod, "ui_artist_release_sort_method");
             Wt::Dbo::field(a, _feedbackBackend, "feedback_backend");
             Wt::Dbo::field(a, _scrobblingBackend, "scrobbling_backend");
             Wt::Dbo::field(a, _listenbrainzToken, "listenbrainz_token");
 
-            // UI player settings
-            Wt::Dbo::field(a, _curPlayingTrackPos, "cur_playing_track_pos");
-            Wt::Dbo::field(a, _repeatAll, "repeat_all");
-            Wt::Dbo::field(a, _radio, "radio");
-
             Wt::Dbo::hasMany(a, _authTokens, Wt::Dbo::ManyToOne, "user");
+            Wt::Dbo::hasMany(a, _uiStates, Wt::Dbo::ManyToOne, "user");
         }
 
     private:
@@ -165,6 +160,7 @@ namespace lms::db
         std::string _passwordHash;
         Wt::WDateTime _lastLogin;
         UITheme _uiTheme{ defaultUITheme };
+        ReleaseSortMethod _uiArtistReleaseSortMethod{ _defaultUIArtistReleaseSortMethod };
         FeedbackBackend _feedbackBackend{ defaultFeedbackBackend };
         ScrobblingBackend _scrobblingBackend{ defaultScrobblingBackend };
         std::string _listenbrainzToken; // Musicbrainz Identifier
@@ -178,12 +174,7 @@ namespace lms::db
         TranscodingOutputFormat _subsonicDefaultTranscodingOutputFormat{ defaultSubsonicTranscodingOutputFormat };
         int _subsonicDefaultTranscodingOutputBitrate{ defaultSubsonicTranscodingOutputBitrate };
 
-        // User's dynamic data (UI)
-        int _curPlayingTrackPos{}; // Current track position in queue
-        bool _repeatAll{};
-        bool _radio{};
-
         Wt::Dbo::collection<Wt::Dbo::ptr<AuthToken>> _authTokens;
+        Wt::Dbo::collection<Wt::Dbo::ptr<UIState>> _uiStates;
     };
-
 } // namespace lms::db

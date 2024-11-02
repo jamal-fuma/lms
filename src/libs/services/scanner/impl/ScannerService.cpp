@@ -29,14 +29,20 @@
 #include "database/MediaLibrary.hpp"
 #include "database/ScanSettings.hpp"
 #include "database/TrackFeatures.hpp"
+#include "image/Image.hpp"
 
-#include "ScanStepCheckDuplicatedDbFiles.hpp"
+#include "ScanStepAssociateArtistImages.hpp"
+#include "ScanStepAssociateExternalLyrics.hpp"
+#include "ScanStepAssociateReleaseImages.hpp"
+#include "ScanStepCheckForDuplicatedFiles.hpp"
+#include "ScanStepCheckForRemovedFiles.hpp"
 #include "ScanStepCompact.hpp"
 #include "ScanStepComputeClusterStats.hpp"
 #include "ScanStepDiscoverFiles.hpp"
 #include "ScanStepOptimize.hpp"
-#include "ScanStepRemoveOrphanDbFiles.hpp"
+#include "ScanStepRemoveOrphanedDbEntries.hpp"
 #include "ScanStepScanFiles.hpp"
+#include "ScanStepUpdateLibraryFields.hpp"
 
 namespace lms::scanner
 {
@@ -266,7 +272,8 @@ namespace lms::scanner
 
         refreshScanSettings();
 
-        IScanStep::ScanContext scanContext{ scanOptions, ScanStats{}, ScanStepStats{} };
+        IScanStep::ScanContext scanContext;
+        scanContext.scanOptions = scanOptions;
         ScanStats& stats{ scanContext.stats };
         stats.startTime = Wt::WDateTime::currentDateTime();
 
@@ -276,7 +283,14 @@ namespace lms::scanner
             LMS_SCOPED_TRACE_OVERVIEW("Scanner", scanStep->getStepName());
 
             LMS_LOG(DBUPDATER, DEBUG, "Starting scan step '" << scanStep->getStepName() << "'");
-            scanContext.currentStepStats = ScanStepStats{ .startTime = Wt::WDateTime::currentDateTime(), .stepIndex = stepIndex++, .currentStep = scanStep->getStep() };
+            scanContext.currentStepStats = ScanStepStats{
+                .startTime = Wt::WDateTime::currentDateTime(),
+                .stepCount = _scanSteps.size(),
+                .stepIndex = stepIndex++,
+                .currentStep = scanStep->getStep(),
+                .totalElems = 0,
+                .processedElems = 0
+            };
 
             notifyInProgress(scanContext.currentStepStats);
             scanStep->process(scanContext);
@@ -336,14 +350,20 @@ namespace lms::scanner
             _db
         };
 
+        // Order is important: steps are sequential
         _scanSteps.clear();
         _scanSteps.push_back(std::make_unique<ScanStepDiscoverFiles>(params));
         _scanSteps.push_back(std::make_unique<ScanStepScanFiles>(params));
-        _scanSteps.push_back(std::make_unique<ScanStepRemoveOrphanDbFiles>(params));
+        _scanSteps.push_back(std::make_unique<ScanStepCheckForRemovedFiles>(params));
+        _scanSteps.push_back(std::make_unique<ScanStepUpdateLibraryFields>(params));
+        _scanSteps.push_back(std::make_unique<ScanStepAssociateArtistImages>(params));
+        _scanSteps.push_back(std::make_unique<ScanStepAssociateReleaseImages>(params));
+        _scanSteps.push_back(std::make_unique<ScanStepAssociateExternalLyrics>(params));
+        _scanSteps.push_back(std::make_unique<ScanStepRemoveOrphanedDbEntries>(params));
         _scanSteps.push_back(std::make_unique<ScanStepCompact>(params));
         _scanSteps.push_back(std::make_unique<ScanStepOptimize>(params));
         _scanSteps.push_back(std::make_unique<ScanStepComputeClusterStats>(params));
-        _scanSteps.push_back(std::make_unique<ScanStepCheckDuplicatedDbFiles>(params));
+        _scanSteps.push_back(std::make_unique<ScanStepCheckForDuplicatedFiles>(params));
     }
 
     ScannerSettings ScannerService::readSettings()
@@ -361,9 +381,23 @@ namespace lms::scanner
             newSettings.updatePeriod = scanSettings->getUpdatePeriod();
 
             {
-                const auto fileExtensions{ scanSettings->getAudioFileExtensions() };
-                newSettings.supportedExtensions.reserve(fileExtensions.size());
-                std::transform(std::cbegin(fileExtensions), std::end(fileExtensions), std::back_inserter(newSettings.supportedExtensions),
+                const auto audioFileExtensions{ scanSettings->getAudioFileExtensions() };
+                newSettings.supportedAudioFileExtensions.reserve(audioFileExtensions.size());
+                std::transform(std::cbegin(audioFileExtensions), std::cend(audioFileExtensions), std::back_inserter(newSettings.supportedAudioFileExtensions),
+                    [](const std::filesystem::path& extension) { return std::filesystem::path{ core::stringUtils::stringToLower(extension.string()) }; });
+            }
+
+            {
+                const auto imageFileExtensions{ image::getSupportedFileExtensions() };
+                newSettings.supportedImageFileExtensions.reserve(imageFileExtensions.size());
+                std::transform(std::cbegin(imageFileExtensions), std::cend(imageFileExtensions), std::back_inserter(newSettings.supportedImageFileExtensions),
+                    [](const std::filesystem::path& extension) { return std::filesystem::path{ core::stringUtils::stringToLower(extension.string()) }; });
+            }
+
+            {
+                const auto lyricsFileExtensions{ metadata::getSupportedLyricsFileExtensions() };
+                newSettings.supportedLyricsFileExtensions.reserve(lyricsFileExtensions.size());
+                std::transform(std::cbegin(lyricsFileExtensions), std::cend(lyricsFileExtensions), std::back_inserter(newSettings.supportedLyricsFileExtensions),
                     [](const std::filesystem::path& extension) { return std::filesystem::path{ core::stringUtils::stringToLower(extension.string()) }; });
             }
 
@@ -393,7 +427,7 @@ namespace lms::scanner
         }
 
         const std::chrono::system_clock::time_point now{ std::chrono::system_clock::now() };
-        _events.scanInProgress(stepStats);
+        _events.scanInProgress.emit(stepStats);
         _lastScanInProgressEmit = now;
     }
 
@@ -401,7 +435,7 @@ namespace lms::scanner
     {
         std::chrono::system_clock::time_point now{ std::chrono::system_clock::now() };
 
-        if (std::chrono::duration_cast<std::chrono::seconds>(now - _lastScanInProgressEmit).count() > 1)
+        if (now - _lastScanInProgressEmit >= std::chrono::seconds{ 1 })
             notifyInProgress(stepStats);
     }
 } // namespace lms::scanner

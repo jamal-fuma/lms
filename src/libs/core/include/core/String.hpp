@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <initializer_list>
 #include <optional>
 #include <span>
@@ -40,6 +41,8 @@ namespace lms::core::stringUtils
 {
     [[nodiscard]] std::vector<std::string_view> splitString(std::string_view string, char separator);
     [[nodiscard]] std::vector<std::string_view> splitString(std::string_view string, std::string_view separator);
+    [[nodiscard]] std::vector<std::string_view> splitString(std::string_view string, std::span<const std::string_view> separators);
+    [[nodiscard]] std::vector<std::string_view> splitString(std::string_view string, std::span<const std::string> separators);
 
     [[nodiscard]] std::string joinStrings(std::span<const std::string> strings, std::string_view delimiter);
     [[nodiscard]] std::string joinStrings(std::span<const std::string_view> strings, std::string_view delimiter);
@@ -49,8 +52,8 @@ namespace lms::core::stringUtils
     [[nodiscard]] std::string escapeAndJoinStrings(std::span<const std::string_view> strings, char delimiter, char escapeChar);
     [[nodiscard]] std::vector<std::string> splitEscapedStrings(std::string_view string, char delimiter, char escapeChar);
 
-    [[nodiscard]] std::string_view stringTrim(std::string_view str, std::string_view whitespaces = " \t");
-    [[nodiscard]] std::string_view stringTrimEnd(std::string_view str, std::string_view whitespaces = " \t");
+    [[nodiscard]] std::string_view stringTrim(std::string_view str, std::string_view whitespaces = " \t\r");
+    [[nodiscard]] std::string_view stringTrimEnd(std::string_view str, std::string_view whitespaces = " \t\r");
 
     [[nodiscard]] std::string stringToLower(std::string_view str);
     void stringToLower(std::string& str);
@@ -65,14 +68,25 @@ namespace lms::core::stringUtils
     template<typename T>
     [[nodiscard]] std::optional<T> readAs(std::string_view str)
     {
-        T res;
+        if constexpr (std::is_enum_v<T>)
+        {
+            using UnderlyingType = std::underlying_type_t<T>;
+            std::optional<UnderlyingType> underlyingValue{ readAs<UnderlyingType>(str) };
+            if (!underlyingValue)
+                return std::nullopt;
 
-        std::istringstream iss{ std::string{ str } };
-        iss >> res;
-        if (iss.fail())
-            return std::nullopt;
+            return static_cast<T>(*underlyingValue);
+        }
+        else
+        {
+            T res;
+            std::istringstream iss{ std::string{ str } };
+            iss >> res;
+            if (iss.fail())
+                return std::nullopt;
 
-        return res;
+            return res;
+        }
     }
 
     template<>
@@ -100,4 +114,7 @@ namespace lms::core::stringUtils
 
     [[nodiscard]] std::string toISO8601String(const Wt::WDateTime& dateTime);
     [[nodiscard]] std::string toISO8601String(const Wt::WDate& date);
+
+    // to "[minutes:seconds.milliseconds]"
+    std::string formatTimestamp(std::chrono::milliseconds timestamp);
 } // namespace lms::core::stringUtils

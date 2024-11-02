@@ -21,6 +21,7 @@
 
 #include <unordered_map>
 
+#include <taglib/aifffile.h>
 #include <taglib/apeproperties.h>
 #include <taglib/apetag.h>
 #include <taglib/asffile.h>
@@ -34,9 +35,12 @@
 #include <taglib/mpcfile.h>
 #include <taglib/mpegfile.h>
 #include <taglib/opusfile.h>
+#include <taglib/synchronizedlyricsframe.h>
 #include <taglib/tag.h>
 #include <taglib/tpropertymap.h>
+#include <taglib/unsynchronizedlyricsframe.h>
 #include <taglib/vorbisfile.h>
+#include <taglib/wavfile.h>
 #include <taglib/wavpackfile.h>
 
 #include "core/ILogger.hpp"
@@ -98,7 +102,6 @@ namespace lms::metadata
             { TagType::LyricistSortOrder, { "LYRICISTSORT" } },
             { TagType::Lyricists, { "LYRICISTS" } },
             { TagType::LyricistsSortOrder, { "LYRICISTSSORT" } },
-            { TagType::Lyrics, { "LYRICS" } },
             { TagType::Media, { "MEDIA" } },
             { TagType::MixDJ, { "DJMIXER" } },
             { TagType::Mixer, { "MIXER" } },
@@ -218,8 +221,63 @@ namespace lms::metadata
             mergeTagMaps(_propertyMap, apeTag->properties());
         };
 
-        // Not that good embedded pictures handling
-        // + get some extra tags that may not be known by taglib
+        auto processID3v2Tags = [&](TagLib::ID3v2::Tag& id3v2Tags) {
+            const auto& frameListMap{ id3v2Tags.frameListMap() };
+
+            // Not that good embedded pictures handling
+            if (!frameListMap["APIC"].isEmpty())
+                _hasEmbeddedCover = true;
+
+            // Get some extra tags that may not be known by taglib
+            if (!frameListMap["TSST"].isEmpty() && !_propertyMap.contains("DISCSUBTITLE"))
+                _propertyMap["DISCSUBTITLE"] = { frameListMap["TSST"].front()->toString() };
+
+            // consider each frame hold a different set of lyrics
+            // Synchronized lyrics frames
+            for (const TagLib::ID3v2::Frame* frame : frameListMap["SYLT"])
+            {
+                const auto* lyricsFrame{ dynamic_cast<const TagLib::ID3v2::SynchronizedLyricsFrame*>(frame) };
+                if (!lyricsFrame)
+                    continue; // TODO log or assert?
+
+                const std::string language{ lyricsFrame->language().data(), lyricsFrame->language().size() };
+                std::string lyrics;
+                for (const TagLib::ID3v2::SynchronizedLyricsFrame::SynchedText& synchedText : lyricsFrame->synchedText())
+                {
+                    std::chrono::milliseconds timestamp{};
+                    switch (lyricsFrame->timestampFormat())
+                    {
+                    case TagLib::ID3v2::SynchronizedLyricsFrame::AbsoluteMilliseconds:
+                        timestamp = std::chrono::milliseconds{ synchedText.time };
+                        break;
+                    case TagLib::ID3v2::SynchronizedLyricsFrame::AbsoluteMpegFrames:
+                        timestamp = std::chrono::milliseconds{ _audioProperties.sampleRate ? (synchedText.time * 1000) / _audioProperties.sampleRate : 0 };
+                        break;
+                    case TagLib::ID3v2::SynchronizedLyricsFrame::Unknown:
+                        break;
+                    }
+
+                    if (!lyrics.empty())
+                        lyrics += '\n';
+
+                    lyrics += core::stringUtils::formatTimestamp(timestamp);
+                    lyrics += synchedText.text.to8Bit(true);
+                }
+
+                _id3v2Lyrics.emplace(language, std::move(lyrics));
+            }
+
+            // Unsynchronized lyrics frames
+            for (const TagLib::ID3v2::Frame* frame : frameListMap["USLT"])
+            {
+                const auto* lyricsFrame{ dynamic_cast<const TagLib::ID3v2::UnsynchronizedLyricsFrame*>(frame) };
+                if (!lyricsFrame)
+                    continue; // TODO log or assert?
+
+                const std::string language{ lyricsFrame->language().data(), lyricsFrame->language().size() };
+                _id3v2Lyrics.emplace(language, lyricsFrame->text().to8Bit(true));
+            }
+        };
 
         // WMA
         if (TagLib::ASF::File * asfFile{ dynamic_cast<TagLib::ASF::File*>(_file.file()) })
@@ -253,16 +311,8 @@ namespace lms::metadata
         // MP3
         else if (TagLib::MPEG::File * mp3File{ dynamic_cast<TagLib::MPEG::File*>(_file.file()) })
         {
-            if (mp3File->ID3v2Tag())
-            {
-                const auto& frameListMap{ mp3File->ID3v2Tag()->frameListMap() };
-
-                if (!frameListMap["APIC"].isEmpty())
-                    _hasEmbeddedCover = true;
-
-                if (!frameListMap["TSST"].isEmpty() && !_propertyMap.contains("DISCSUBTITLE"))
-                    _propertyMap["DISCSUBTITLE"] = { frameListMap["TSST"].front()->toString() };
-            }
+            if (mp3File->hasID3v2Tag())
+                processID3v2Tags(*mp3File->ID3v2Tag());
 
             getAPETags(mp3File->APETag());
         }
@@ -273,6 +323,27 @@ namespace lms::metadata
             TagLib::MP4::CoverArtList coverArtList{ coverItem.toCoverArtList() };
             if (!coverArtList.isEmpty())
                 _hasEmbeddedCover = true;
+
+            if (!_propertyMap.contains("ORIGINALDATE"))
+            {
+                // For now:
+                // * TagLib 2.0 only parses ----:com.apple.iTunes:ORIGINALDATE
+                // / TagLib <2.0 only parses ----:com.apple.iTunes:originaldate
+                const auto& tags{ mp4File->tag()->itemMap() };
+                for (const auto& origDateString : { "----:com.apple.iTunes:originaldate", "----:com.apple.iTunes:ORIGINALDATE" })
+                {
+                    auto itOrigDateTag{ tags.find(origDateString) };
+                    if (itOrigDateTag != std::cend(tags))
+                    {
+                        const TagLib::StringList dates{ itOrigDateTag->second.toStringList() };
+                        if (!dates.isEmpty())
+                        {
+                            _propertyMap["ORIGINALDATE"] = dates.front();
+                            break;
+                        }
+                    }
+                }
+            }
         }
         // MPC
         else if (TagLib::MPC::File * mpcFile{ dynamic_cast<TagLib::MPC::File*>(_file.file()) })
@@ -299,6 +370,16 @@ namespace lms::metadata
         {
             if (!opusFile->tag()->pictureList().isEmpty())
                 _hasEmbeddedCover = true;
+        }
+        else if (TagLib::RIFF::AIFF::File * aiffFile{ dynamic_cast<TagLib::RIFF::AIFF::File*>(_file.file()) })
+        {
+            if (aiffFile->hasID3v2Tag())
+                processID3v2Tags(*aiffFile->tag());
+        }
+        else if (TagLib::RIFF::WAV::File * wavFile{ dynamic_cast<TagLib::RIFF::WAV::File*>(_file.file()) })
+        {
+            if (wavFile->hasID3v2Tag())
+                processID3v2Tags(*wavFile->ID3v2Tag());
         }
 
         if (debug && core::Service<core::logging::ILogger>::get()->isSeverityActive(core::logging::Severity::DEBUG))
@@ -334,19 +415,14 @@ namespace lms::metadata
             _audioProperties.bitsPerSample = mp4Properties->bitsPerSample();
         else if (const auto* wavePackProperties{ dynamic_cast<const TagLib::WavPack::Properties*>(properties) })
             _audioProperties.bitsPerSample = wavePackProperties->bitsPerSample();
+        else if (const auto* aiffProperties{ dynamic_cast<const TagLib::RIFF::AIFF::Properties*>(properties) })
+            _audioProperties.bitsPerSample = aiffProperties->bitsPerSample();
+        else if (const auto* wavProperties{ dynamic_cast<const TagLib::RIFF::WAV::Properties*>(properties) })
+            _audioProperties.bitsPerSample = wavProperties->bitsPerSample();
 #if TAGLIB_MAJOR_VERSION >= 2
         else if (const auto* dsfProperties{ dynamic_cast<const TagLib::DSF::Properties*>(properties) })
             _audioProperties.bitsPerSample = dsfProperties->bitsPerSample();
 #endif
-    }
-
-    size_t TagLibTagReader::countTagValues(TagType tag) const
-    {
-        size_t count{};
-        visitTagValues(tag, [&](std::string_view) {
-            count++;
-        });
-        return count;
     }
 
     void TagLibTagReader::visitTagValues(TagType tag, TagValueVisitor visitor) const
@@ -402,6 +478,22 @@ namespace lms::metadata
                     visitor(role, name);
                 }
             }
+        }
+    }
+
+    void TagLibTagReader::visitLyricsTags(LyricsVisitor visitor) const
+    {
+        if (!_id3v2Lyrics.empty())
+        {
+            for (const auto& [language, lyrics] : _id3v2Lyrics)
+                visitor(language, lyrics);
+        }
+        else
+        {
+            // otherwise, just visit regular LYRICS tag with no language
+            visitTagValues("LYRICS", [&](std::string_view value) {
+                visitor("", value);
+            });
         }
     }
 } // namespace lms::metadata

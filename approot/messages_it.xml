@@ -34,6 +34,13 @@
 </message>
 <message id="Lms.user">Utente</message>
 
+<!--Locale-->
+<message id="Lms.locale.decimal-point">,</message>
+<message id="Lms.locale.group-separator">.</message>
+<message id="Lms.locale.date-format">dd/MM/yyyy</message>
+<message id="Lms.locale.time-format">HH:mm:ss</message>
+<message id="Lms.locale.date-time-format">dd/MM/yyyy HH:mm:ss</message>
+
 <!--Errors-->
 <message id="Lms.Error.artist-not-found">Artista non trovato</message>
 <message id="Lms.Error.error-occurred">C'è stato un errore!</message>
@@ -87,7 +94,9 @@
 
 <!--Scanner Controller-->
 <message id="Lms.Admin.ScannerController.bad-duration">Non sono stato in grado di determinare la durata della traccia</message>
-<message id="Lms.Admin.ScannerController.cannot-parse-file">Non in grado di analizzare il file</message>
+<message id="Lms.Admin.ScannerController.cannot-read-audio-file">Impossibile analizzare il file audio</message>
+<message id="Lms.Admin.ScannerController.cannot-read-image-file">Impossibile analizzare il file immagine</message>
+<message id="Lms.Admin.ScannerController.cannot-read-lyrics-file">Impossibile analizzare il file dei testi</message>
 <message id="Lms.Admin.ScannerController.cannot-read-file">Non in grado di leggere il file</message>
 <message id="Lms.Admin.ScannerController.compact">Compatta il database. <strong>Attenzione:</strong> ciò potrebbe richiedere del tempo e bloccherà l'intera applicazione durante il passaggio di compattazione!</message>
 <message id="Lms.Admin.ScannerController.duplicates-header">{1} file duplicati:</message>
@@ -97,7 +106,7 @@
 <message id="Lms.Admin.ScannerController.get-report">Scarica un resoconto</message>
 <message id="Lms.Admin.ScannerController.last-scan">Ultima scansione</message>
 <message id="Lms.Admin.ScannerController.last-scan-not-available">Non disponibile</message>
-<message id="Lms.Admin.ScannerController.last-scan-status">Scansionati {1} files in {2} su {3} ({4} errori, {5} duplicati)</message>
+<message id="Lms.Admin.ScannerController.last-scan-status">{1} file scansionati in {2} alle {3} il {4} (UTC) - {5} errori, {6} duplicati</message>
 <message id="Lms.Admin.ScannerController.no-audio-track">Nessuna traccia audio</message>
 <message id="Lms.Admin.ScannerController.same-hash">Hash doppio</message>
 <message id="Lms.Admin.ScannerController.same-mbid">Track MBID doppio</message>
@@ -106,18 +115,23 @@
 <message id="Lms.Admin.ScannerController.scanner">Scanner</message>
 <message id="Lms.Admin.ScannerController.status">Stato</message>
 <message id="Lms.Admin.ScannerController.status-not-scheduled">Non pianificato</message>
-<message id="Lms.Admin.ScannerController.status-scheduled">Pianificato il {1}</message>
+<message id="Lms.Admin.ScannerController.status-scheduled">Programmato alle {2} del {1} (UTC)</message>
 <message id="Lms.Admin.ScannerController.status-in-progress">Scansione: passo {1}/{2}</message>
+<message id="Lms.Admin.ScannerController.step-associating-artist-images">Associando immagini degli artisti: {1}%...</message>
+<message id="Lms.Admin.ScannerController.step-associating-external-lyrics">Associazione dei testi esterni: {1}%...</message>
+<message id="Lms.Admin.ScannerController.step-associating-release-images">Associando immagini degli album: {1}%...</message>
 <message id="Lms.Admin.ScannerController.step-checking-for-duplicate-files">Controllo duplicati... {1} files</message>
-<message id="Lms.Admin.ScannerController.step-checking-for-missing-files">Controllo file... {1}%</message>
+<message id="Lms.Admin.ScannerController.step-checking-for-removed-files">Controllo file... {1}%</message>
 <message id="Lms.Admin.ScannerController.step-compact">Compattazione del database...</message>
 <message id="Lms.Admin.ScannerController.step-compute-cluster-stats">Calcolo statistiche... {1}%</message>
 <message id="Lms.Admin.ScannerController.step-discovering-files">File trovati: {1} files</message>
 <message id="Lms.Admin.ScannerController.step-fetching-track-features">Recupero metadati da AcousticBrainz: {1}/{2} tracce ({3}%)...</message>
-<message id="Lms.Admin.ScannerController.step-optimize">Ottimizzazione del database... {1}/{2} voci ({3}%)...</message>
+<message id="Lms.Admin.ScannerController.step-optimize">Ottimizzazione del database... {1}%...</message>
 <message id="Lms.Admin.ScannerController.step-reloading-similarity-engine">Ricarica motore di tracce simili: {1}%...</message>
-<message id="Lms.Admin.ScannerController.step-scanning-files">Scansione files: {1}/{2} files ({3}%)...</message>
+<message id="Lms.Admin.ScannerController.step-removing-orphaned-entries">Rimozione voci orfane: {1} voci...</message>
+<message id="Lms.Admin.ScannerController.step-scanning-files">Scansione dei file: {1}/{2} ({3}%)...</message>
 <message id="Lms.Admin.ScannerController.step-status">Stato passo</message>
+<message id="Lms.Admin.ScannerController.step-updating-library-fields">Aggiornamento dei campi della libreria: {1} voci</message>
 
 <!--Tracing-->
 <message id="Lms.Admin.Tracing.export-current-buffer">Esporta tracce</message>
@@ -177,6 +191,7 @@
 <message id="Lms.Explore.star">Aggiungi ai preferiti</message>
 <message id="Lms.Explore.starred">Preferiti</message>
 <message id="Lms.Explore.track-info">Informazioni sulla traccia</message>
+<message id="Lms.Explore.track-lyrics">Testo</message>
 <message id="Lms.Explore.tracklists">Playlist</message>
 <message id="Lms.Explore.tracks">Tracce</message>
 <message id="Lms.Explore.type">Tipo</message>
@@ -272,18 +287,24 @@
 <message id="Lms.PlayHistory.playhistory">Storico riproduzione</message>
 
 <!--Settings-->
+<message id="Lms.Settings.artist-release-sort-method">Metodo per ordinare gli album dell'artista</message>
 <message id="Lms.Settings.audio">Audio</message>
 <message id="Lms.Settings.audio-settings-are-local">Queste impostazioni sono salvate localmente su questo dispositivo!</message>
 <message id="Lms.Settings.backend.internal">Interno</message>
 <message id="Lms.Settings.backend.listenbrainz">ListenBrainz</message>
 <message id="Lms.Settings.backend.listenbrainz-token">Token API ListenBrainz</message>
 <message id="Lms.Settings.change-password">Cambia password</message>
+<message id="Lms.Settings.date-asc">Data di uscita (Crescente)</message>
+<message id="Lms.Settings.date-desc">Data di uscita (Decrescente)</message>
 <message id="Lms.Settings.default-transcoding-output-bitrate">Bitrate di default per la transcodifica</message>
 <message id="Lms.Settings.default-transcoding-output-format">Formato di default per la transcodifica</message>
 <message id="Lms.Settings.demo-cannot-save">Non posso salvare le impostazioni utilizzando l'account demo!</message>
 <message id="Lms.Settings.enable-transcoding-by-default">Abilita transcodifica di default</message>
 <message id="Lms.Settings.feedback">Feedback</message>
 <message id="Lms.Settings.menu-settings"><i class="fa fa-fw fa-cog" aria-hidden="true"></i> Impostazioni</message>
+<message id="Lms.Settings.name">Nome dell'album</message>
+<message id="Lms.Settings.original-date-asc">Data di uscita originale (Crescente)</message>
+<message id="Lms.Settings.original-date-desc">Data di uscita originale (Decrescente)</message>
 <message id="Lms.Settings.password-bad">Password errata</message>
 <message id="Lms.Settings.password-must-fill-old-password">Devi inserire la password attuale</message>
 <message id="Lms.Settings.replaygain-mode">Modalità ReplayGain</message>
@@ -301,6 +322,7 @@
 <message id="Lms.Settings.subsonic-artist-list-mode.release-artists">Artisti album</message>
 <message id="Lms.Settings.subsonic-artist-list-mode.track-artists">Artisti tracce</message>
 <message id="Lms.Settings.subsonic-api">Subsonic API</message>
+<message id="Lms.Settings.user-interface">Interfaccia utente</message>
 <message id="Lms.Settings.transcoding">Transcodifica</message>
 <message id="Lms.Settings.transcoding-output-bitrate">Bitrate transcodifica</message>
 <message id="Lms.Settings.transcoding-output-format">Formato di transcodifica</message>
@@ -316,6 +338,36 @@
 <message id="Lms.Settings.settings-saved">Nuove impostazioni salvate!</message>
 
 <!--Wt-->
+<message id="Wt.WDateTime.LessThanASecond">meno di un secondo</message>
+<message id="Wt.WDateTime.seconds">
+    <plural case="0">un secondo</plural>
+    <plural case="1">{1} secondi</plural>
+</message>
+<message id="Wt.WDateTime.minutes">
+    <plural case="0">un minuto</plural>
+    <plural case="1">{1} minuti</plural>
+</message>
+<message id="Wt.WDateTime.hours">
+    <plural case="0">un'ora</plural>
+    <plural case="1">{1} ore</plural>
+</message>
+<message id="Wt.WDateTime.days">
+    <plural case="0">un giorno</plural>
+    <plural case="1">{1} giorni</plural>
+</message>
+<message id="Wt.WDateTime.weeks">
+    <plural case="0">una settimana</plural>
+    <plural case="1">{1} settimane</plural>
+</message>
+<message id="Wt.WDateTime.months">
+    <plural case="0">un mese</plural>
+    <plural case="1">{1} mesi</plural>
+</message>
+<message id="Wt.WDateTime.years">
+    <plural case="0">un anno</plural>
+    <plural case="1">{1} anni</plural>
+</message>
+<message id="Wt.WDateTime.null"></message>
 <message id="Wt.WMessageBox.Yes">Si</message>
 <message id="Wt.WMessageBox.No">No</message>
 <message id="Wt.WValidator.Invalid">Questo campo non può essere vuoto</message>

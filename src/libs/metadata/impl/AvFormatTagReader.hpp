@@ -37,10 +37,10 @@ namespace lms::metadata
         AvFormatTagReader(const AvFormatTagReader&) = delete;
         AvFormatTagReader& operator=(const AvFormatTagReader&) = delete;
 
-        size_t countTagValues(TagType tag) const override;
         void visitTagValues(TagType tag, TagValueVisitor visitor) const override;
         void visitTagValues(std::string_view tag, TagValueVisitor visitor) const override;
         void visitPerformerTags(PerformerVisitor visitor) const override;
+        void visitLyricsTags(LyricsVisitor visitor) const override;
         bool hasEmbeddedCover() const override { return _hasEmbeddedCover; }
         const AudioProperties& getAudioProperties() const override { return _audioProperties; }
 

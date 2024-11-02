@@ -24,11 +24,13 @@
 #include "core/ILogger.hpp"
 #include "database/Artist.hpp"
 #include "database/Cluster.hpp"
+#include "database/Directory.hpp"
 #include "database/MediaLibrary.hpp"
 #include "database/Release.hpp"
 #include "database/Session.hpp"
 #include "database/TrackArtistLink.hpp"
 #include "database/TrackFeatures.hpp"
+#include "database/TrackLyrics.hpp"
 #include "database/User.hpp"
 
 #include "IdTypeTraits.hpp"
@@ -51,6 +53,9 @@ namespace lms::db
             assert(params.keywords.empty() || params.name.empty());
             for (std::string_view keyword : params.keywords)
                 query.where("t.name LIKE ? ESCAPE '" ESCAPE_CHAR_STR "'").bind("%" + utils::escapeLikeKeyword(keyword) + "%");
+
+            if (!params.stem.empty())
+                query.where("t.file_stem = ?").bind(params.stem);
 
             if (!params.name.empty())
                 query.where("t.name = ?").bind(params.name);
@@ -153,6 +158,12 @@ namespace lms::db
             if (params.mediaLibrary.isValid())
                 query.where("t.media_library_id = ?").bind(params.mediaLibrary);
 
+            if (params.directory.isValid())
+                query.where("t.directory_id = ?").bind(params.directory);
+
+            if (params.hasEmbeddedImage.has_value())
+                query.where("t.has_cover = ?").bind(params.hasEmbeddedImage.value());
+
             switch (params.sortMethod)
             {
             case TrackSortMethod::None:
@@ -219,21 +230,21 @@ namespace lms::db
     {
         session.checkReadTransaction();
 
-        return utils::fetchQuerySingleResult(session.getDboSession()->find<Track>().where("absolute_file_path = ?").bind(p.string()));
+        return utils::fetchQuerySingleResult(session.getDboSession()->query<Wt::Dbo::ptr<Track>>("SELECT t from track t").where("t.absolute_file_path = ?").bind(p.string()));
     }
 
     Track::pointer Track::find(Session& session, TrackId id)
     {
         session.checkReadTransaction();
 
-        return utils::fetchQuerySingleResult(session.getDboSession()->find<Track>().where("id = ?").bind(id));
+        return utils::fetchQuerySingleResult(session.getDboSession()->query<Wt::Dbo::ptr<Track>>("SELECT t from track t").where("t.id = ?").bind(id));
     }
 
     void Track::find(Session& session, TrackId& lastRetrievedTrack, std::size_t count, const std::function<void(const Track::pointer&)>& func, MediaLibraryId library)
     {
         session.checkReadTransaction();
 
-        auto query{ session.getDboSession()->find<Track>().orderBy("id").where("id > ?").bind(lastRetrievedTrack).limit(static_cast<int>(count)) };
+        auto query{ session.getDboSession()->query<Wt::Dbo::ptr<Track>>("SELECT t from track t").orderBy("t.id").where("t.id > ?").bind(lastRetrievedTrack).limit(static_cast<int>(count)) };
 
         if (library.isValid())
             query.where("media_library_id = ?").bind(library);
@@ -255,14 +266,14 @@ namespace lms::db
     {
         session.checkReadTransaction();
 
-        return utils::fetchQueryResults<Track::pointer>(session.getDboSession()->find<Track>().where("mbid = ?").bind(mbid.getAsString()));
+        return utils::fetchQueryResults<Track::pointer>(session.getDboSession()->query<Wt::Dbo::ptr<Track>>("SELECT t from track t").where("t.mbid = ?").bind(mbid.getAsString()));
     }
 
     std::vector<Track::pointer> Track::findByRecordingMBID(Session& session, const core::UUID& mbid)
     {
         session.checkReadTransaction();
 
-        return utils::fetchQueryResults<Track::pointer>(session.getDboSession()->find<Track>().where("recording_mbid = ?").bind(mbid.getAsString()));
+        return utils::fetchQueryResults<Track::pointer>(session.getDboSession()->query<Wt::Dbo::ptr<Track>>("SELECT t from track t").where("t.recording_mbid = ?").bind(mbid.getAsString()));
     }
 
     RangeResults<TrackId> Track::findIdsTrackMBIDDuplicates(Session& session, std::optional<Range> range)
@@ -365,12 +376,37 @@ namespace lms::db
     {
         assert(filePath.is_absolute());
         _absoluteFilePath = filePath;
+        _fileStem = filePath.stem();
     }
 
     void Track::setRelativeFilePath(const std::filesystem::path& filePath)
     {
         assert(filePath.is_relative());
+
+        assert(_absoluteFilePath.filename() == filePath.filename()); // must be compatible with previous setAbsoluteFilePath call
+        _fileStem = filePath.stem();                                 // lazy migration (_fileStem added later, could be set only with setAbsoluteFilePath)
         _relativeFilePath = filePath;
+    }
+
+    void Track::setName(std::string_view name)
+    {
+        _name = std::string{ name, 0, _maxNameLength };
+        if (name.size() > _maxNameLength)
+            LMS_LOG(DB, WARNING, "Track name too long, truncated to '" << _name << "'");
+    }
+
+    void Track::setCopyright(std::string_view copyright)
+    {
+        _copyright = std::string{ copyright, 0, _maxCopyrightLength };
+        if (copyright.size() > _maxCopyrightLength)
+            LMS_LOG(DB, WARNING, "Track copyright too long, truncated to '" << _copyright << "'");
+    }
+
+    void Track::setCopyrightURL(std::string_view copyrightURL)
+    {
+        _copyrightURL = std::string{ copyrightURL, 0, _maxCopyrightURLLength };
+        if (copyrightURL.size() > _maxCopyrightURLLength)
+            LMS_LOG(DB, WARNING, "Track copyright URL too long, truncated to '" << _copyrightURL << "'");
     }
 
     void Track::clearArtistLinks()
@@ -388,6 +424,26 @@ namespace lms::db
         _clusters.clear();
         for (const ObjectPtr<Cluster>& cluster : clusters)
             _clusters.insert(getDboPtr(cluster));
+    }
+
+    void Track::clearLyrics()
+    {
+        _trackLyrics.clear();
+    }
+
+    void Track::clearEmbeddedLyrics()
+    {
+        utils::executeCommand(*session(), "DELETE FROM track_lyrics WHERE absolute_file_path = '' AND track_id = ?", getId());
+    }
+
+    void Track::addLyrics(const ObjectPtr<TrackLyrics>& lyrics)
+    {
+        _trackLyrics.insert(getDboPtr(lyrics));
+    }
+
+    bool Track::hasLyrics() const
+    {
+        return !_trackLyrics.empty();
     }
 
     std::optional<std::string> Track::getCopyright() const
@@ -429,6 +485,8 @@ namespace lms::db
             query.bind(type);
 
         query.where("t.id = ?").bind(getId());
+        query.groupBy("t_a_l.artist_id");
+        query.orderBy("t_a_l.id");
 
         return utils::fetchQueryResults<Artist::pointer>(query);
     }
@@ -463,6 +521,7 @@ namespace lms::db
 
         query.where("t.id = ?").bind(getId());
         query.groupBy("t_a_l.artist_id");
+        query.orderBy("t_a_l.id");
 
         return utils::fetchQueryResults(query);
     }

@@ -97,6 +97,41 @@ namespace lms::core::stringUtils
 
             return res;
         }
+
+        template<typename StringType>
+        std::vector<std::string_view> splitString(std::string_view str, std::span<const StringType> separators)
+        {
+            std::vector<std::string_view> res;
+
+            size_t currentPos{};
+            while (currentPos < str.size())
+            {
+                size_t nextSeparatorPos{ std::string_view::npos };
+                size_t sepLen{};
+
+                for (const std::string_view sep : separators)
+                {
+                    if (sep.empty())
+                        continue;
+
+                    size_t found{ str.find(sep, currentPos) };
+                    if (found < nextSeparatorPos)
+                    {
+                        nextSeparatorPos = found;
+                        sepLen = sep.size();
+                    }
+                }
+
+                if (nextSeparatorPos == std::string_view::npos)
+                    break;
+
+                res.push_back(str.substr(currentPos, nextSeparatorPos - currentPos));
+                currentPos = nextSeparatorPos + sepLen;
+            }
+
+            res.push_back(str.substr(currentPos));
+            return res;
+        }
     } // namespace details
 
     template<>
@@ -114,9 +149,9 @@ namespace lms::core::stringUtils
     template<>
     std::optional<bool> readAs(std::string_view str)
     {
-        if (str == "1" || str == "true")
+        if (str == "1" || stringCaseInsensitiveEqual(str, "true"))
             return true;
-        else if (str == "0" || str == "false")
+        else if (str == "0" || stringCaseInsensitiveEqual(str, "false"))
             return false;
 
         return std::nullopt;
@@ -129,24 +164,17 @@ namespace lms::core::stringUtils
 
     std::vector<std::string_view> splitString(std::string_view str, std::string_view separator)
     {
-        std::vector<std::string_view> res;
+        return splitString(str, std::span(&separator, 1));
+    }
 
-        if (separator.empty())
-            return { str };
+    std::vector<std::string_view> splitString(std::string_view str, std::span<const std::string_view> separators)
+    {
+        return details::splitString(str, separators);
+    }
 
-        size_t pos{};
-        size_t found{ str.find(separator) };
-
-        while (found != std::string_view::npos)
-        {
-            res.push_back(str.substr(pos, found - pos));
-            pos = found + separator.size();
-            found = str.find(separator, pos);
-        }
-
-        res.push_back(str.substr(pos));
-
-        return res;
+    std::vector<std::string_view> splitString(std::string_view str, std::span<const std::string> separators)
+    {
+        return details::splitString(str, separators);
     }
 
     std::string joinStrings(std::span<const std::string_view> strings, std::string_view delimiter)
@@ -434,5 +462,18 @@ namespace lms::core::stringUtils
     {
         // assume UTC
         return date.toString("yyyy-MM-dd").toUTF8();
+    }
+
+    std::string formatTimestamp(std::chrono::milliseconds timestamp)
+    {
+        using namespace std::chrono;
+
+        const auto mins{ duration_cast<minutes>(timestamp).count() };
+        timestamp -= duration_cast<milliseconds>(minutes{ mins });
+        const auto secs{ duration_cast<seconds>(timestamp).count() };
+        timestamp -= duration_cast<milliseconds>(seconds{ secs });
+        const auto millis{ timestamp.count() };
+
+        return "[" + std::to_string(mins) + ":" + (secs < 10 ? "0" : "") + std::to_string(secs) + "." + (millis < 100 ? (millis < 10 ? "00" : "0") : "") + std::to_string(millis) + "]";
     }
 } // namespace lms::core::stringUtils
