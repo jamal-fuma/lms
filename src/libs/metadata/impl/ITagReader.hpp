@@ -19,24 +19,25 @@
 
 #pragma once
 
-#include <chrono>
 #include <functional>
 
 #include "metadata/Types.hpp"
 
 namespace lms::metadata
 {
-    // using picard internal names
+    // prefer using picard internal names
     // see https://picard-docs.musicbrainz.org/en/appendices/tag_mapping.html
     enum class TagType
     {
         AcoustID,
         AcoustIDFingerprint,
+        Advisory, // non standard
         Album,
         AlbumArtist,
         AlbumArtists, // non standard
         AlbumArtistSortOrder,
         AlbumArtistsSortOrder, // non standard
+        AlbumComment,          // non standard
         AlbumSortOrder,
         Arranger,
         Artist,
@@ -64,6 +65,7 @@ namespace lms::metadata
         DiscSubtitle,
         EncodedBy,
         EncoderSettings,
+        EncodingTime,
         Engineer,
         GaplessPlayback,
         Genre,
@@ -87,14 +89,22 @@ namespace lms::metadata
         Movement,
         MovementCount,
         MovementNumber,
+        MusicBrainzArrangerID, // non standard
         MusicBrainzArtistID,
+        MusicBrainzComposerID,  // non standard
+        MusicBrainzConductorID, // non standard
+        MusicBrainzDirectorID,  // non standard
         MusicBrainzDiscID,
+        MusicBrainzLyricistID, // non standard
         MusicBrainzOriginalArtistID,
         MusicBrainzOriginalReleaseID,
+        MusicBrainzMixerID,    // non standard
+        MusicBrainzProducerID, // non standard
         MusicBrainzRecordingID,
         MusicBrainzReleaseArtistID,
         MusicBrainzReleaseGroupID,
         MusicBrainzReleaseID,
+        MusicBrainzRemixerID, // non standard
         MusicBrainzTrackID,
         MusicBrainzWorkID,
         MusicIPFingerprint,
@@ -158,7 +168,6 @@ namespace lms::metadata
         using LyricsVisitor = std::function<void(std::string_view language, std::string_view lyrics)>;
         virtual void visitLyricsTags(LyricsVisitor visitor) const = 0;
 
-        virtual bool hasEmbeddedCover() const = 0;
         virtual const AudioProperties& getAudioProperties() const = 0;
     };
 } // namespace lms::metadata

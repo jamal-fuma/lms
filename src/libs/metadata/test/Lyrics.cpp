@@ -72,6 +72,34 @@ namespace lms::metadata::tests
         EXPECT_EQ(lyrics.synchronizedLines.find(9s + 160ms)->second, "I, I just woke up from a dream");
     }
 
+    TEST(Lyrics, tagsWithSpaces)
+    {
+        std::istringstream is{ R"([al:    dqsxdkbu ]  
+[00:09.16]I, I just woke up from a dream)" };
+
+        const Lyrics lyrics{ parseLyrics(is) };
+
+        EXPECT_EQ(lyrics.unsynchronizedLines.size(), 0);
+        ASSERT_EQ(lyrics.synchronizedLines.size(), 1);
+        EXPECT_EQ(lyrics.displayAlbum, "dqsxdkbu");
+        ASSERT_TRUE(lyrics.synchronizedLines.contains(9s + 160ms));
+        EXPECT_EQ(lyrics.synchronizedLines.find(9s + 160ms)->second, "I, I just woke up from a dream");
+    }
+
+    TEST(Lyrics, tagIDsWithSpaces)
+    {
+        std::istringstream is{ R"([  al   :    dqsxdkbu ]
+[00:09.16]I, I just woke up from a dream)" };
+
+        const Lyrics lyrics{ parseLyrics(is) };
+
+        EXPECT_EQ(lyrics.unsynchronizedLines.size(), 0);
+        ASSERT_EQ(lyrics.synchronizedLines.size(), 1);
+        EXPECT_EQ(lyrics.displayAlbum, "dqsxdkbu");
+        ASSERT_TRUE(lyrics.synchronizedLines.contains(9s + 160ms));
+        EXPECT_EQ(lyrics.synchronizedLines.find(9s + 160ms)->second, "I, I just woke up from a dream");
+    }
+
     TEST(Lyrics, tagAtTheEndOfLyrics)
     {
         std::istringstream is{ R"([00:03.30]Ooh, ooh
@@ -163,6 +191,22 @@ Some unsynchronized lyrics
         EXPECT_EQ(lyrics.synchronizedLines.find(3s + 300ms)->second, "Ooh, ooh");
     }
 
+    TEST(Lyrics, synchronized_withTimestampsDelimiters)
+    {
+        std::istringstream is{ R"([00:03.30]Ooh, ooh ] [])" };
+
+        const Lyrics lyrics{ parseLyrics(is) };
+
+        EXPECT_TRUE(lyrics.displayArtist.empty());
+        EXPECT_TRUE(lyrics.displayAlbum.empty());
+        EXPECT_TRUE(lyrics.displayTitle.empty());
+        EXPECT_EQ(lyrics.offset, std::chrono::milliseconds{ 0 });
+        EXPECT_EQ(lyrics.unsynchronizedLines.size(), 0);
+        ASSERT_EQ(lyrics.synchronizedLines.size(), 1);
+        ASSERT_TRUE(lyrics.synchronizedLines.contains(3s + 300ms));
+        EXPECT_EQ(lyrics.synchronizedLines.find(3s + 300ms)->second, "Ooh, ooh ] []");
+    }
+
     TEST(Lyrics, synchronized_timestampFormats)
     {
         std::istringstream is{ R"([00:03.30]First line
@@ -225,6 +269,28 @@ SecondLine
         EXPECT_EQ(lyrics.synchronizedLines.find(3s + 300ms)->second, "Ooh, ooh\nSecondLine\n Even a third line!!");
         ASSERT_TRUE(lyrics.synchronizedLines.contains(6s + 750ms));
         EXPECT_EQ(lyrics.synchronizedLines.find(6s + 750ms)->second, "Foo");
+    }
+
+    TEST(Lyrics, synchronized_emptyLines)
+    {
+        std::istringstream is{ R"([00:03.30]Ooh, ooh
+[00:03.30]
+[00:06.75]
+[00:06.75]Foo
+ )" };
+
+        const Lyrics lyrics{ parseLyrics(is) };
+
+        EXPECT_TRUE(lyrics.displayArtist.empty());
+        EXPECT_TRUE(lyrics.displayAlbum.empty());
+        EXPECT_TRUE(lyrics.displayTitle.empty());
+        EXPECT_EQ(lyrics.offset, std::chrono::milliseconds{ 0 });
+        EXPECT_EQ(lyrics.unsynchronizedLines.size(), 0);
+        ASSERT_EQ(lyrics.synchronizedLines.size(), 2);
+        ASSERT_TRUE(lyrics.synchronizedLines.contains(3s + 300ms));
+        EXPECT_EQ(lyrics.synchronizedLines.find(3s + 300ms)->second, "Ooh, ooh\n");
+        ASSERT_TRUE(lyrics.synchronizedLines.contains(6s + 750ms));
+        EXPECT_EQ(lyrics.synchronizedLines.find(6s + 750ms)->second, "\nFoo");
     }
 
     TEST(Lyrics, synchronized_multitimestamps)

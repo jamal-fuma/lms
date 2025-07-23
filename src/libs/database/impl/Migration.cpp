@@ -24,18 +24,17 @@
 #include "core/Exception.hpp"
 #include "core/ILogger.hpp"
 #include "core/ITraceLogger.hpp"
-#include "database/Db.hpp"
-#include "database/ScanSettings.hpp"
 #include "database/Session.hpp"
-#include "database/User.hpp"
+#include "database/objects/ScanSettings.hpp"
 
+#include "Db.hpp"
 #include "Utils.hpp"
 
 namespace lms::db
 {
     namespace
     {
-        static constexpr Version LMS_DATABASE_VERSION{ 71 };
+        static constexpr Version LMS_DATABASE_VERSION{ 98 };
     }
 
     VersionInfo::VersionInfo()
@@ -88,6 +87,14 @@ namespace lms::db::Migration
 
     namespace
     {
+        void dropIndexes(Session& session)
+        {
+            // Make sure we remove all the previoulsy created index, the createIndexesIfNeeded will recreate them all
+            std::vector<std::string> indexeNames{ utils::fetchQueryResults(session.getDboSession()->query<std::string>(R"(SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE '%_idx')")) };
+            for (const auto& indexName : indexeNames)
+                utils::executeCommand(*session.getDboSession(), "DROP INDEX " + indexName);
+        }
+
         void migrateFromV33(Session& session)
         {
             // remove name from track_artist_link
@@ -127,7 +134,7 @@ CREATE TABLE IF NOT EXISTS "track_artist_link_backup" (
         void migrateFromV36(Session& session)
         {
             // Increased precision for track durations (now in milliseconds instead of secodns)
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
@@ -136,7 +143,7 @@ CREATE TABLE IF NOT EXISTS "track_artist_link_backup" (
             // Support Performer tags (via subtypes)
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE track_artist_link ADD subtype TEXT");
 
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
@@ -176,7 +183,7 @@ CREATE TABLE IF NOT EXISTS "track_backup" (
             utils::executeCommand(*session.getDboSession(), "DROP TABLE track");
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE track_backup RENAME TO track");
 
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
@@ -186,7 +193,7 @@ CREATE TABLE IF NOT EXISTS "track_backup" (
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE release ADD primary_type INTEGER");
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE release ADD secondary_types INTEGER");
 
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
@@ -196,7 +203,7 @@ CREATE TABLE IF NOT EXISTS "track_backup" (
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE release ADD artist_display_name TEXT NOT NULL DEFAULT ''");
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE track ADD artist_display_name TEXT NOT NULL DEFAULT ''");
 
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
@@ -241,7 +248,7 @@ CREATE TABLE IF NOT EXISTS "track_backup" (
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE cluster ADD track_count INTEGER");
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE cluster ADD release_count INTEGER");
 
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
@@ -250,7 +257,7 @@ CREATE TABLE IF NOT EXISTS "track_backup" (
             // add bitrate
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE track ADD bitrate INTEGER NOT NULL DEFAULT 0");
 
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
@@ -274,7 +281,7 @@ CREATE TABLE IF NOT EXISTS "track_backup" (
 
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE scan_settings ADD COLUMN extra_tags_to_scan TEXT");
 
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
@@ -299,14 +306,14 @@ CREATE TABLE IF NOT EXISTS "track_backup" (
             utils::executeCommand(*session.getDboSession(), R"(CREATE INDEX "release_release_type_release_type" on "release_release_type" ("release_type_id"))");
             utils::executeCommand(*session.getDboSession(), R"(CREATE INDEX "release_release_type_release" on "release_release_type" ("release_id"))");
 
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
         void migrateFromV48(Session& session)
         {
             // Regression for the extra tags not being parsed
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
@@ -316,7 +323,7 @@ CREATE TABLE IF NOT EXISTS "track_backup" (
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE track ADD year INTEGER");
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE track ADD original_year INTEGER");
 
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
@@ -403,7 +410,7 @@ SELECT
  copyright_url,
  track_replay_gain,
  release_replay_gain,
- COALESCE(artist_display_name, ""),
+ artist_display_name,
  release_id,
  1
  FROM track)");
@@ -423,7 +430,7 @@ SELECT
             // Add sort name for releases
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE release ADD sort_name TEXT NOT NULL DEFAULT ''");
 
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
@@ -432,7 +439,7 @@ SELECT
             // Add release group mbid
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE release ADD group_mbid TEXT NOT NULL DEFAULT ''");
 
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
@@ -443,7 +450,7 @@ SELECT
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE track ADD file_size BIGINT NOT NULL DEFAULT(0)");
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE track ADD relative_file_path TEXT NOT NULL DEFAULT ''");
 
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
@@ -454,16 +461,14 @@ SELECT
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE track ADD channel_count INTEGER NOT NULL DEFAULT(0)");
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE track ADD sample_rate INTEGER NOT NULL DEFAULT(0)");
 
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
         void migrateFromV56(Session& session)
         {
             // Make sure we remove all the previoulsy created index, the createIndexesIfNeeded will recreate them all
-            std::vector<std::string> indexeNames{ utils::fetchQueryResults(session.getDboSession()->query<std::string>(R"(SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE '%_idx')")) };
-            for (const auto& indexName : indexeNames)
-                utils::executeCommand(*session.getDboSession(), "DROP INDEX " + indexName);
+            dropIndexes(session);
         }
 
         void migrateFromV57(Session& session)
@@ -494,7 +499,7 @@ SELECT
   constraint "fk_image_artist" foreign key ("artist_id") references "artist" ("id") on delete cascade deferrable initially deferred
 ))");
 
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
@@ -625,7 +630,7 @@ SELECT
             utils::executeCommand(*session.getDboSession(), "DROP TABLE image");
             utils::executeCommand(*session.getDboSession(), "ALTER TABLE image_backup RENAME TO image");
 
-            // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+            // Just increment the scan version of the settings to make the next scan rescan everything
             utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
         }
 
@@ -660,7 +665,7 @@ SELECT
         utils::executeCommand(*session.getDboSession(), "DROP TABLE directory");
         utils::executeCommand(*session.getDboSession(), "ALTER TABLE directory_backup RENAME TO directory");
 
-        // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+        // Just increment the scan version of the settings to make the next scan rescan everything
         utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
     }
 
@@ -669,7 +674,7 @@ SELECT
         // Add a new column comment
         utils::executeCommand(*session.getDboSession(), "ALTER TABLE track ADD comment TEXT NOT NULL DEFAULT ''");
 
-        // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+        // Just increment the scan version of the settings to make the next scan rescan everything
         utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
     }
 
@@ -732,7 +737,7 @@ SELECT
         utils::executeCommand(*session.getDboSession(), R"(CREATE INDEX "release_label_label" on "release_label" ("label_id"))");
         utils::executeCommand(*session.getDboSession(), R"(CREATE INDEX "release_label_release" on "release_label" ("release_id"))");
 
-        // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+        // Just increment the scan version of the settings to make the next scan rescan everything
         utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
     }
 
@@ -740,7 +745,7 @@ SELECT
     {
         utils::executeCommand(*session.getDboSession(), "ALTER TABLE release ADD is_compilation BOOLEAN NOT NULL DEFAULT(false)");
 
-        // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+        // Just increment the scan version of the settings to make the next scan rescan everything
         utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
     }
 
@@ -805,7 +810,7 @@ SELECT
         for (const auto& indexName : indexeNames)
             utils::executeCommand(*session.getDboSession(), "DROP INDEX " + indexName);
 
-        // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+        // Just increment the scan version of the settings to make the next scan rescan everything
         utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
     }
 
@@ -868,7 +873,7 @@ SELECT
         utils::executeCommand(*session.getDboSession(), "DROP TABLE artist");
         utils::executeCommand(*session.getDboSession(), "ALTER TABLE artist_backup RENAME TO artist");
 
-        // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+        // Just increment the scan version of the settings to make the next scan rescan everything
         utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
     }
 
@@ -903,15 +908,526 @@ SELECT
   constraint "fk_track_lyrics_directory" foreign key ("directory_id") references "directory" ("id") on delete cascade deferrable initially deferred
 ))");
 
-        // Just increment the scan version of the settings to make the next scheduled scan rescan everything
+        // Just increment the scan version of the settings to make the next scan rescan everything
         utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
+    }
+
+    void migrateFromV71(Session& session)
+    {
+        // Add a file name/stem in tracks
+        utils::executeCommand(*session.getDboSession(), R"(CREATE TABLE IF NOT EXISTS "playqueue" (
+  "id" integer primary key autoincrement,
+  "version" integer not null,
+  "name" text not null,
+  "current_index" integer not null,
+  "current_position_in_track" integer,
+  "last_modified_date_time" text,
+  "user_id" bigint,
+  constraint "fk_playqueue_user" foreign key ("user_id") references "user" ("id") on delete cascade deferrable initially deferred
+))");
+
+        utils::executeCommand(*session.getDboSession(), R"(CREATE TABLE IF NOT EXISTS "playqueue_track" (
+  "playqueue_id" bigint,
+  "track_id" bigint not null,
+  primary key ("playqueue_id", "track_id"),
+  constraint "fk_playqueue_track_key1" foreign key ("playqueue_id") references "playqueue" ("id") on delete cascade deferrable initially deferred,
+  constraint "fk_playqueue_track_key2" foreign key ("track_id") references "track" ("id") on delete cascade deferrable initially deferred
+))");
+        utils::executeCommand(*session.getDboSession(), R"(CREATE INDEX "playqueue_track_playqueue" on "playqueue_track" ("playqueue_id"))");
+        utils::executeCommand(*session.getDboSession(), R"(CREATE INDEX "playqueue_track_track" on "playqueue_track" ("track_id"))");
+    }
+
+    void migrateFromV72(Session& session)
+    {
+        // Add catalog number
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE release ADD barcode TEXT NOT NULL DEFAULT ''");
+
+        // Just increment the scan version of the settings to make the next scan rescan everything
+        utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
+    }
+
+    void migrateFromV73(Session& session)
+    {
+        // Remove any trailing '/' in library paths
+        utils::executeCommand(*session.getDboSession(), "UPDATE media_library SET path = rtrim(path, '/') WHERE path LIKE '%/'");
+    }
+
+    void migrateFromV74(Session& session)
+    {
+        // New auth token authentication for Subsonic API
+        // Previous tokens are not usable any more, no problem since they are just used for the ui's "remember me" feature
+        utils::executeCommand(*session.getDboSession(), "DELETE FROM auth_token");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE auth_token ADD domain TEXT NOT NULL");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE auth_token ADD use_count INTEGER NOT NULL");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE auth_token ADD last_used TEXT");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE auth_token ADD max_use_count INTEGER");
+
+        utils::executeCommand(*session.getDboSession(), "DROP INDEX IF EXISTS auth_token_user_idx");
+        utils::executeCommand(*session.getDboSession(), "DROP INDEX IF EXISTS auth_token_expiry_idx");
+        utils::executeCommand(*session.getDboSession(), "DROP INDEX IF EXISTS auth_token_value_idx");
+    }
+
+    void migrateFromV75(Session& session)
+    {
+        // Added a new option to set the bcrypt count to be use to hash user's passwords
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE user ADD bcrypt_round_count INTEGER NOT NULL DEFAULT(7)");
+    }
+
+    void migrateFromV76(Session& session)
+    {
+        // Rename public -> visibility (false is Private(0) and true is Public(1))
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE tracklist RENAME COLUMN public TO visibility");
+
+        // Supported extensions are now runtime
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE scan_settings DROP COLUMN audio_file_extensions");
+
+        // Add PlayListFile
+        utils::executeCommand(*session.getDboSession(), R"(CREATE TABLE IF NOT EXISTS "playlist_file" (
+  "id" integer primary key autoincrement,
+  "version" integer not null,
+  "absolute_file_path" text not null,
+  "file_stem" text not null,
+  "file_size" bigint not null,
+  "file_last_write" text,
+  "name" text not null,
+  "entries" text not null,
+  "media_library_id" bigint,
+  "directory_id" bigint,
+  constraint "fk_playlist_file_media_library" foreign key ("media_library_id") references "media_library" ("id") on delete set null deferrable initially deferred,
+  constraint "fk_playlist_file_directory" foreign key ("directory_id") references "directory" ("id") on delete cascade deferrable initially deferred
+))");
+
+        // Add a link into tracklist to ease cleanup
+        utils::executeCommand(*session.getDboSession(), R"(CREATE TABLE IF NOT EXISTS "tracklist_backup" (
+  "id" integer primary key autoincrement,
+  "version" integer not null,
+  "name" text not null,
+  "type" integer not null,
+  "visibility" integer not null,
+  "creation_date_time" text,
+  "last_modified_date_time" text,
+  "user_id" bigint,
+  "playlist_file_id" bigint,
+  constraint "fk_tracklist_user" foreign key ("user_id") references "user" ("id") on delete cascade deferrable initially deferred,
+  constraint "fk_tracklist_playlist_file" foreign key ("playlist_file_id") references "playlist_file" ("id") on delete cascade deferrable initially deferred))");
+
+        utils::executeCommand(*session.getDboSession(), R"(INSERT INTO tracklist_backup
+SELECT
+  id,
+  version,
+  name,
+  type,
+  visibility,
+  creation_date_time,
+  last_modified_date_time,
+  user_id,
+  NULL AS playlist_file_id
+FROM tracklist)");
+
+        utils::executeCommand(*session.getDboSession(), R"(DROP TABLE tracklist)");
+        utils::executeCommand(*session.getDboSession(), R"(ALTER TABLE tracklist_backup RENAME TO tracklist)");
+
+        // Add a file name in tracks
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE track ADD COLUMN file_name TEXT NOT NULL DEFAULT ''");
+
+        // Just increment the scan version of the settings to make the next scan rescan everything
+        utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
+    }
+
+    void migrateFromV77(Session& session)
+    {
+        // added new scan settings: skip single release playlists (default value is conservative, no need to rescan)
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE scan_settings ADD COLUMN skip_single_release_playlists BOOLEAN NOT NULL DEFAULT(FALSE)");
+    }
+
+    void migrateFromV78(Session& session)
+    {
+        // added advisory tag support
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE track ADD COLUMN advisory INTEGER NOT NULL DEFAULT(0)"); // 0 means unset
+
+        // Just increment the scan version of the settings to make the next scan rescan everything
+        utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
+    }
+
+    void migrateFromV79(Session& session)
+    {
+        // Make sure we remove all the previoulsy created index, the createIndexesIfNeeded will recreate them all
+        dropIndexes(session);
+
+        // New partial date/time support
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE track DROP COLUMN year");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE track DROP COLUMN original_year");
+
+        // Just increment the scan version of the settings to make the next scan rescan everything
+        utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
+    }
+
+    void migrateFromV80(Session& session)
+    {
+        // Add release comment support
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE release ADD COLUMN comment TEXT NOT NULL DEFAULT ''");
+
+        // Just increment the scan version of the settings to make the next scan rescan everything
+        utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
+    }
+
+    void migrateFromV81(Session& session)
+    {
+        // Make sure we remove all the previoulsy created index, the createIndexesIfNeeded will recreate them all
+        dropIndexes(session);
+
+        // Add country + release country
+        utils::executeCommand(*session.getDboSession(), R"(CREATE TABLE IF NOT EXISTS "country" (
+  "id" integer primary key autoincrement,
+  "version" integer not null,
+  "name" text not null
+    ))");
+
+        utils::executeCommand(*session.getDboSession(), R"(CREATE TABLE IF NOT EXISTS "release_country" (
+        "country_id" bigint,
+        "release_id" bigint,
+        primary key ("country_id", "release_id"),
+        constraint "fk_release_country_key1" foreign key ("country_id") references "country" ("id") on delete cascade deferrable initially deferred,
+        constraint "fk_release_country_key2" foreign key ("release_id") references "release" ("id") on delete cascade deferrable initially deferred
+    ))");
+
+        utils::executeCommand(*session.getDboSession(), R"(CREATE INDEX "release_country_country" on "release_country" ("country_id"))");
+        utils::executeCommand(*session.getDboSession(), R"(CREATE INDEX "release_country_release" on "release_country" ("release_id"))");
+
+        // Just increment the scan version of the settings to make the next scan rescan everything
+        utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
+    }
+
+    void migrateFromV82(Session& session)
+    {
+        // New setting to display inline artist relationships in the release view
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE user ADD COLUMN ui_enable_inline_artist_relationships BOOLEAN NOT NULL DEFAULT(false)");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE user ADD COLUMN ui_inline_artist_relationships BIGINT NOT NULL DEFAULT(68)"); // Composer + Performer
+    }
+
+    void migrateFromV83(Session& session)
+    {
+        // New embedded track image handling
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE track DROP COLUMN has_cover");
+        utils::executeCommand(*session.getDboSession(), R"(CREATE TABLE IF NOT EXISTS "track_embedded_image" (
+  "id" integer primary key autoincrement,
+  "version" integer not null,
+  "hash" text not null,
+  "size" integer not null,
+  "width" integer not null,
+  "height" integer not null,
+  "mime_type" text not null
+))");
+
+        utils::executeCommand(*session.getDboSession(), R"(CREATE TABLE IF NOT EXISTS "track_embedded_image_link" (
+  "id" integer primary key autoincrement,
+  "version" integer not null,
+  "index" integer not null,
+  "is_preferred" boolean not null,
+  "type" integer not null,
+  "description" text not null,
+  "track_id" bigint,
+  "track_embedded_image_id" bigint,
+  constraint "fk_track_embedded_image_link_track" foreign key ("track_id") references "track" ("id") on delete cascade deferrable initially deferred,
+  constraint "fk_track_embedded_image_link_track_embedded_image" foreign key ("track_embedded_image_id") references "track_embedded_image" ("id") on delete cascade deferrable initially deferred
+    ))");
+
+        // Just increment the scan version of the settings to make the next scan rescan everything
+        utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
+    }
+
+    void migrateFromV84(Session& session)
+    {
+        // New artist info feature
+        utils::executeCommand(*session.getDboSession(), R"(CREATE TABLE IF NOT EXISTS "artist_info" (
+  "id" integer primary key autoincrement,
+  "version" integer not null,
+  "absolute_file_path" text not null,
+  "file_last_write" text,
+  "type" text not null,
+  "gender" text not null,
+  "disambiguation" text not null,
+  "biography" text not null,
+  "directory_id" bigint,
+  "artist_id" bigint,
+  constraint "fk_artist_info_directory" foreign key ("directory_id") references "directory" ("id") on delete cascade deferrable initially deferred,
+  constraint "fk_artist_info_artist" foreign key ("artist_id") references "artist" ("id") on delete cascade deferrable initially deferred
+    ))");
+
+        // Just increment the scan version of the settings to make the next scan rescan everything
+        utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
+    }
+
+    void migrateFromV85(Session& session)
+    {
+        dropIndexes(session);
+
+        // Artist merging feature
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE scan_settings ADD COLUMN allow_mbid_artist_merge BOOLEAN DEFAULT(false)");
+
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE track_artist_link ADD COLUMN artist_name TEXT NULL DEFAULT('')");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE track_artist_link ADD COLUMN artist_sort_name TEXT NULL DEFAULT('')");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE track_artist_link ADD COLUMN artist_mbid_matched BOOLEAN NOT NULL DEFAULT(false)");
+
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE artist_info ADD COLUMN name TEXT NULL DEFAULT('')");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE artist_info ADD COLUMN sort_name TEXT NULL DEFAULT('')");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE artist_info ADD COLUMN mbid_matched BOOLEAN NOT NULL DEFAULT(false)");
+
+        // Just increment the scan version of the settings to make the next scan rescan everything
+        utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET scan_version = scan_version + 1");
+    }
+
+    void migrateFromV86(Session& session)
+    {
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE scan_settings ADD COLUMN name TEXT NOT NULL DEFAULT('')");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE scan_settings RENAME COLUMN scan_version TO audio_scan_version");
+    }
+
+    void migrateFromV87(Session& session)
+    {
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE scan_settings ADD COLUMN artists_to_not_split TEXT NOT NULL DEFAULT('')");
+    }
+
+    void migrateFromV88(Session& session)
+    {
+        // Badly populated mbid_matched fields for tracks and artist info: need to rescan everything
+        // Just increment the scan version of the settings to make the next scan rescan everything
+        utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET audio_scan_version = audio_scan_version + 1");
+    }
+
+    void migrateFromV89(Session& session)
+    {
+        // ArtistInfo need to be force rescanned: introduced a field for this
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE scan_settings ADD COLUMN artist_info_scan_version INTEGER NOT NULL DEFAULT(0)");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE artist_info ADD COLUMN scan_version INTEGER NOT NULL DEFAULT(0)");
+
+        // Just increment the scan version of the settings to make the next scan rescan everything
+        utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET artist_info_scan_version = artist_info_scan_version + 1");
+    }
+
+    void migrateFromV90(Session& session)
+    {
+        // Added a fallback for missing name, using parent directory name
+        // Just increment the scan version of the settings to make the next scan rescan everything
+        utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET artist_info_scan_version = artist_info_scan_version + 1");
+    }
+
+    void migrateFromV91(Session& session)
+    {
+        dropIndexes(session);
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE track_embedded_image_link DROP COLUMN is_preferred");
+    }
+
+    void migrateFromV92(Session& session)
+    {
+        // Create the new artwork table
+        utils::executeCommand(*session.getDboSession(), R"(CREATE TABLE IF NOT EXISTS "artwork" (
+  "id" integer primary key autoincrement,
+  "version" integer not null,
+  "track_embedded_image_id" bigint,
+  "image_id" bigint,
+  constraint "fk_artwork_track_embedded_image" foreign key ("track_embedded_image_id") references "track_embedded_image" ("id") on delete cascade deferrable initially deferred,
+  constraint "fk_artwork_image" foreign key ("image_id") references "image" ("id") on delete cascade deferrable initially deferred))");
+
+        // Replaced image by artwork for release
+        utils::executeCommand(*session.getDboSession(), R"(CREATE TABLE IF NOT EXISTS "release_backup" (
+  "id" integer primary key autoincrement,
+  "version" integer not null,
+  "name" text not null,
+  "sort_name" text not null,
+  "mbid" text not null,
+  "group_mbid" text not null,
+  "total_disc" integer,
+  "artist_display_name" text not null,
+  "is_compilation" boolean not null,
+  "barcode" text not null,
+  "comment" text not null,
+  "preferred_artwork_id" bigint,
+  constraint "fk_release_preferred_artwork" foreign key ("preferred_artwork_id") references "artwork" ("id") on delete set null deferrable initially deferred))");
+        // Migrate data, with the new preferred_artwork_id field set to null
+        utils::executeCommand(*session.getDboSession(), R"(INSERT INTO release_backup
+SELECT
+ id,
+ version,
+ name,
+ sort_name,
+ mbid,
+ group_mbid,
+ total_disc,
+ COALESCE(artist_display_name, ''),
+ is_compilation,
+ barcode,
+ comment,
+ NULL as preferred_artwork_id
+FROM release)");
+
+        utils::executeCommand(*session.getDboSession(), "DROP TABLE release");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE release_backup RENAME TO release");
+
+        // Replaced image by artwork for track
+        utils::executeCommand(*session.getDboSession(), R"(CREATE TABLE IF NOT EXISTS "track_backup" (
+  "id" integer primary key autoincrement,
+  "version" integer not null,
+  "scan_version" integer not null,
+  "track_number" integer,
+  "disc_number" integer,
+  "total_track" integer,
+  "disc_subtitle" text not null,
+  "name" text not null,
+  "duration" integer,
+  "bitrate" integer not null,
+  "bits_per_sample" integer not null,
+  "channel_count" integer not null,
+  "sample_rate" integer not null,
+  "date" text,
+  "original_date" text,
+  "absolute_file_path" text not null,
+  "relative_file_path" text not null,
+  "file_stem" text not null,
+  "file_name" text not null,
+  "file_size" bigint not null,
+  "file_last_write" text,
+  "file_added" text,
+  "mbid" text not null,
+  "recording_mbid" text not null,
+  "copyright" text not null,
+  "copyright_url" text not null,
+  "advisory" integer not null,
+  "track_replay_gain" real,
+  "release_replay_gain" real,
+  "artist_display_name" text not null,
+  "comment" text not null,
+  "release_id" bigint,
+  "media_library_id" bigint,
+  "directory_id" bigint,
+  "preferred_artwork_id" bigint,
+  "preferred_media_artwork_id" bigint,
+  constraint "fk_track_release" foreign key ("release_id") references "release" ("id") on delete cascade deferrable initially deferred,
+  constraint "fk_track_media_library" foreign key ("media_library_id") references "media_library" ("id") on delete set null deferrable initially deferred,
+  constraint "fk_track_directory" foreign key ("directory_id") references "directory" ("id") on delete cascade deferrable initially deferred,
+  constraint "fk_track_preferred_artwork" foreign key ("preferred_artwork_id") references "artwork" ("id") on delete set null deferrable initially deferred,
+  constraint "fk_track_preferred_media_artwork" foreign key ("preferred_media_artwork_id") references "artwork" ("id") on delete set null deferrable initially deferred
+    ))");
+        // Migrate data, with the new preferred_artwork_id and preferred_media_artwork_id fields set to null
+        utils::executeCommand(*session.getDboSession(), R"(INSERT INTO track_backup
+SELECT
+ id,
+ version,
+ scan_version,
+ track_number,
+ disc_number,
+ total_track,
+ disc_subtitle,
+ name,
+ duration,
+ bitrate,
+ bits_per_sample,
+ channel_count,
+ sample_rate,
+ date,
+ original_date,
+ absolute_file_path,
+ relative_file_path,
+ file_stem,
+ file_name,
+ file_size,
+ file_last_write,
+ file_added,
+ mbid,
+ recording_mbid,
+ copyright,
+ copyright_url,
+ advisory,
+ track_replay_gain,
+ release_replay_gain,
+ artist_display_name,
+ comment,
+ release_id,
+ media_library_id,
+ directory_id,
+ NULL as preferred_artwork_id,
+ NULL as preferred_media_artwork_id
+FROM track)");
+        utils::executeCommand(*session.getDboSession(), "DROP TABLE track");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE track_backup RENAME TO track");
+
+        // Replaced image by artwork for artist
+        utils::executeCommand(*session.getDboSession(), R"(CREATE TABLE IF NOT EXISTS "artist_backup" (
+  "id" integer primary key autoincrement,
+  "version" integer not null,
+  "name" text not null,
+  "sort_name" text not null,
+  "mbid" text not null,
+  "preferred_artwork_id" bigint,
+  constraint "fk_artist_preferred_artwork" foreign key ("preferred_artwork_id") references "artwork" ("id") on delete set null deferrable initially deferred
+    ))");
+        // Migrate data, with the new preferred_artwork_id field set to null
+        utils::executeCommand(*session.getDboSession(), R"(INSERT INTO artist_backup
+SELECT
+ id,
+ version,
+ name,
+ sort_name,
+ mbid,
+ NULL as preferred_artwork_id
+FROM artist)");
+
+        utils::executeCommand(*session.getDboSession(), "DROP TABLE artist");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE artist_backup RENAME TO artist");
+
+        // Just increment the scan version of the settings to make the next scan rescan everything
+        utils::executeCommand(*session.getDboSession(), "UPDATE scan_settings SET audio_scan_version = audio_scan_version + 1");
+    }
+
+    void migrateFromV93(Session& session)
+    {
+        // add artist_image_fallback_to_release in ScanSettings
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE scan_settings ADD COLUMN artist_image_fallback_to_release BOOLEAN NOT NULL DEFAULT(false)");
+    }
+
+    void migrateFromV94(Session& session)
+    {
+        // Removed not that useful columns in track
+        dropIndexes(session);
+
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE track DROP COLUMN relative_file_path");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE track DROP COLUMN file_stem");
+        utils::executeCommand(*session.getDboSession(), "ALTER TABLE track DROP COLUMN file_name");
+    }
+
+    void migrateFromV95(Session& session)
+    {
+        // Make sure each image and each embessed image has an artwork object
+        utils::executeCommand(*session.getDboSession(), R"(INSERT INTO artwork (version, track_embedded_image_id)
+SELECT 1 AS version, tei.id
+FROM track_embedded_image tei
+LEFT JOIN artwork art ON tei.id = art.track_embedded_image_id
+WHERE art.track_embedded_image_id IS NULL)");
+
+        utils::executeCommand(*session.getDboSession(), R"(INSERT INTO artwork (version, image_id)
+SELECT 1 AS version, img.id
+FROM image img
+LEFT JOIN artwork art ON img.id = art.image_id
+WHERE art.image_id IS NULL)");
+    }
+
+    void migrateFromV96(Session& session)
+    {
+        // Removed not that useful indexes
+        dropIndexes(session);
+    }
+
+    void migrateFromV97(Session& session)
+    {
+        // Removed not that useful indexes
+        dropIndexes(session);
     }
 
     bool doDbMigration(Session& session)
     {
         constexpr std::string_view outdatedMsg{ "Outdated database, please rebuild it (delete the .db file and restart)" };
 
-        ScopedNoForeignKeys noPragmaKeys{ session.getDb() };
+        ScopedNoForeignKeys noPragmaKeys{ static_cast<Db&>(session.getDb()) };
 
         using MigrationFunction = std::function<void(Session&)>;
 
@@ -954,6 +1470,33 @@ SELECT
             { 68, migrateFromV68 },
             { 69, migrateFromV69 },
             { 70, migrateFromV70 },
+            { 71, migrateFromV71 },
+            { 72, migrateFromV72 },
+            { 73, migrateFromV73 },
+            { 74, migrateFromV74 },
+            { 75, migrateFromV75 },
+            { 76, migrateFromV76 },
+            { 77, migrateFromV77 },
+            { 78, migrateFromV78 },
+            { 79, migrateFromV79 },
+            { 80, migrateFromV80 },
+            { 81, migrateFromV81 },
+            { 82, migrateFromV82 },
+            { 83, migrateFromV83 },
+            { 84, migrateFromV84 },
+            { 85, migrateFromV85 },
+            { 86, migrateFromV86 },
+            { 87, migrateFromV87 },
+            { 88, migrateFromV88 },
+            { 89, migrateFromV89 },
+            { 90, migrateFromV90 },
+            { 91, migrateFromV91 },
+            { 92, migrateFromV92 },
+            { 93, migrateFromV93 },
+            { 94, migrateFromV94 },
+            { 95, migrateFromV95 },
+            { 96, migrateFromV96 },
+            { 97, migrateFromV97 },
         };
 
         bool migrationPerformed{};
@@ -985,7 +1528,9 @@ SELECT
                 LMS_LOG(DB, INFO, "Migrating database from version " << version << " to " << version + 1 << "...");
 
                 auto itMigrationFunc{ migrationFunctions.find(version) };
-                assert(itMigrationFunc != std::cend(migrationFunctions));
+                if (itMigrationFunc == std::cend(migrationFunctions))
+                    throw core::LmsException{ "No code found to upgrade database!" };
+
                 itMigrationFunc->second(session);
 
                 VersionInfo::get(session).modify()->setVersion(++version);

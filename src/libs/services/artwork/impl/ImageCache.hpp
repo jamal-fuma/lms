@@ -20,16 +20,16 @@
 #pragma once
 
 #include <atomic>
+#include <cassert>
+#include <memory>
+#include <optional>
 #include <shared_mutex>
 #include <unordered_map>
-#include <variant>
 
-#include "database/ArtistId.hpp"
-#include "database/ReleaseId.hpp"
-#include "database/TrackId.hpp"
+#include "database/objects/ArtworkId.hpp"
 #include "image/IEncodedImage.hpp"
 
-namespace lms::cover
+namespace lms::artwork
 {
     class ImageCache
     {
@@ -38,9 +38,8 @@ namespace lms::cover
 
         struct EntryDesc
         {
-            using VariantType = std::variant<db::ArtistId, db::ReleaseId, db::TrackId>;
-            VariantType id;
-            std::size_t size;
+            db::ArtworkId id;
+            std::optional<std::size_t> size;
 
             bool operator==(const EntryDesc& other) const = default;
         };
@@ -60,13 +59,14 @@ namespace lms::cover
         {
             std::size_t operator()(const EntryDesc& entry) const
             {
-                return std::hash<EntryDesc::VariantType>{}(entry.id) ^ std::hash<std::size_t>{}(entry.size);
+                assert(entry.size); // should not cache unresized images
+                return std::hash<db::ArtworkId>{}(entry.id) ^ std::hash<std::size_t>{}(*entry.size);
             }
         };
 
         std::unordered_map<EntryDesc, std::shared_ptr<image::IEncodedImage>, EntryHasher> _cache;
         std::size_t _cacheSize{};
-        mutable std::atomic<std::size_t> _cacheMisses{};
-        mutable std::atomic<std::size_t> _cacheHits{};
+        mutable std::atomic<std::size_t> _cacheMisses;
+        mutable std::atomic<std::size_t> _cacheHits;
     };
-} // namespace lms::cover
+} // namespace lms::artwork

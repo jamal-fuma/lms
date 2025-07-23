@@ -27,7 +27,7 @@
 
 namespace lms::db
 {
-    class Db;
+    class IDb;
 }
 
 namespace lms::recommendation
@@ -41,9 +41,8 @@ namespace lms::recommendation
     class RecommendationService : public IRecommendationService
     {
     public:
-        RecommendationService(db::Db& db);
-        ~RecommendationService() = default;
-
+        RecommendationService(db::IDb& db);
+        ~RecommendationService() override = default;
         RecommendationService(const RecommendationService&) = delete;
         RecommendationService& operator=(const RecommendationService&) = delete;
 
@@ -51,7 +50,7 @@ namespace lms::recommendation
         void load() override;
 
         TrackContainer findSimilarTracks(db::TrackListId tracklistId, std::size_t maxCount) const override;
-        TrackContainer findSimilarTracks(const std::vector<db::TrackId>& tracksId, std::size_t maxCount) const override;
+        TrackContainer findSimilarTracks(const std::vector<db::TrackId>& trackIds, std::size_t maxCount) const override;
         ReleaseContainer getSimilarReleases(db::ReleaseId releaseId, std::size_t maxCount) const override;
         ArtistContainer getSimilarArtists(db::ArtistId artistId, core::EnumSet<db::TrackArtistLinkType> linkTypes, std::size_t maxCount) const override;
 
@@ -59,7 +58,7 @@ namespace lms::recommendation
         void clearEngines();
         void loadPendingEngine(EngineType engineType, std::unique_ptr<IEngine> engine, bool forceReload, const ProgressCallback& progressCallback);
 
-        db::Db& _db;
+        db::IDb& _db;
         std::optional<EngineType> _engineType;
         std::unique_ptr<IEngine> _engine;
     };

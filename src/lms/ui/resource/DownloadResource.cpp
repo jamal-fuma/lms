@@ -22,17 +22,16 @@
 #include <Wt/Http/Response.h>
 #include <Wt/WDateTime.h>
 
-#include "core/Exception.hpp"
 #include "core/ILogger.hpp"
-#include "database/Artist.hpp"
-#include "database/Release.hpp"
 #include "database/Session.hpp"
-#include "database/Track.hpp"
-#include "database/TrackList.hpp"
+#include "database/objects/Artist.hpp"
+#include "database/objects/Release.hpp"
+#include "database/objects/Track.hpp"
+#include "database/objects/TrackList.hpp"
 
 #include "LmsApplication.hpp"
 
-#define LOG(severity, message) LMS_LOG(UI, severity, "Download resource: " << message)
+#define DL_RESOURCE_LOG(severity, message) LMS_LOG(UI, severity, "Download resource: " << message)
 
 namespace lms::ui
 {
@@ -53,6 +52,13 @@ namespace lms::ui
             else
             {
                 zipper = createZipper();
+                if (!zipper)
+                {
+                    // no track, may be a legit case
+                    response.setStatus(404);
+                    return;
+                }
+
                 response.setMimeType("application/zip");
             }
 
@@ -65,7 +71,7 @@ namespace lms::ui
         }
         catch (zip::Exception& exception)
         {
-            LOG(ERROR, "Zipper exception: " << exception.what());
+            DL_RESOURCE_LOG(ERROR, "Zipper exception: " << exception.what());
         }
     }
 
@@ -214,7 +220,7 @@ namespace lms::ui
         const db::Track::pointer track{ db::Track::find(LmsApp->getDbSession(), _trackId) };
         if (!track)
         {
-            LOG(DEBUG, "Cannot find track");
+            DL_RESOURCE_LOG(DEBUG, "Cannot find track");
             return {};
         }
 

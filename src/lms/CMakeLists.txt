@@ -14,11 +14,14 @@ add_executable(lms
 	ui/State.cpp
 	ui/Tooltip.cpp
 	ui/Utils.cpp
+	ui/admin/debug/Database.cpp
+	ui/admin/debug/Tracing.cpp
+	ui/admin/DebugToolsView.cpp
 	ui/admin/InitWizardView.cpp
 	ui/admin/MediaLibrariesView.cpp
 	ui/admin/MediaLibraryModal.cpp
-	ui/admin/TracingView.cpp
 	ui/admin/ScannerController.cpp
+	ui/admin/ScannerReportResource.cpp
 	ui/admin/ScanSettingsView.cpp
 	ui/admin/UserView.cpp
 	ui/admin/UsersView.cpp
@@ -72,6 +75,7 @@ target_link_libraries(lms PRIVATE
 	lmsscrobbling
 	lmsartwork
 	lmssubsonic
+	lmstranscoding
 	lmscore
 	)
 

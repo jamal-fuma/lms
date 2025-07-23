@@ -1,20 +1,34 @@
-
-add_library(lmsscanner SHARED
-	impl/FileScanQueue.cpp
+add_library(lmsscanner STATIC
+	impl/helpers/ArtistHelpers.cpp
+	impl/scanners/ArtistInfoFileScanner.cpp
+	impl/scanners/AudioFileScanOperation.cpp
+	impl/scanners/FileScanOperationBase.cpp
+	impl/scanners/AudioFileScanner.cpp
+	impl/scanners/ImageFileScanner.cpp
+	impl/scanners/LyricsFileScanner.cpp
+	impl/scanners/PlayListFileScanner.cpp
+	impl/scanners/Utils.cpp
+	impl/steps/JobQueue.cpp
+	impl/steps/ScanErrorLogger.cpp
+	impl/steps/ScanStepArtistReconciliation.cpp
+	impl/steps/ScanStepAssociateArtistImages.cpp
+	impl/steps/ScanStepAssociateExternalLyrics.cpp
+	impl/steps/ScanStepAssociatePlayListTracks.cpp
+	impl/steps/ScanStepAssociateReleaseImages.cpp
+	impl/steps/ScanStepAssociateTrackImages.cpp
+	impl/steps/ScanStepBase.cpp
+	impl/steps/ScanStepCheckForDuplicatedFiles.cpp
+	impl/steps/ScanStepCheckForRemovedFiles.cpp
+	impl/steps/ScanStepCompact.cpp
+	impl/steps/ScanStepComputeClusterStats.cpp
+	impl/steps/ScanStepOptimize.cpp
+	impl/steps/ScanStepRemoveOrphanedDbEntries.cpp
+	impl/steps/ScanStepScanFiles.cpp
+	impl/steps/ScanStepUpdateLibraryFields.cpp
+	impl/FileScanners.cpp
 	impl/ScannerService.cpp
+	impl/ScannerServiceTraceLogger.cpp
 	impl/ScannerStats.cpp
-	impl/ScanStepAssociateArtistImages.cpp
-	impl/ScanStepAssociateExternalLyrics.cpp
-	impl/ScanStepAssociateReleaseImages.cpp
-	impl/ScanStepCheckForDuplicatedFiles.cpp
-	impl/ScanStepCheckForRemovedFiles.cpp
-	impl/ScanStepCompact.cpp
-	impl/ScanStepComputeClusterStats.cpp
-	impl/ScanStepDiscoverFiles.cpp
-	impl/ScanStepOptimize.cpp
-	impl/ScanStepRemoveOrphanedDbEntries.cpp
-	impl/ScanStepScanFiles.cpp
-	impl/ScanStepUpdateLibraryFields.cpp
 	)
 
 target_include_directories(lmsscanner INTERFACE
@@ -23,6 +37,7 @@ target_include_directories(lmsscanner INTERFACE
 
 target_include_directories(lmsscanner PRIVATE
 	include
+	impl
 	)
 
 target_link_libraries(lmsscanner PRIVATE
@@ -37,6 +52,3 @@ target_link_libraries(lmsscanner PUBLIC
 	std::filesystem
 	Wt::Wt
 	)
-
-install(TARGETS lmsscanner DESTINATION ${CMAKE_INSTALL_LIBDIR})
-

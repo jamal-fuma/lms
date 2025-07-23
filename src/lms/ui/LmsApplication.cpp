@@ -29,15 +29,16 @@
 #include "core/ILogger.hpp"
 #include "core/ITraceLogger.hpp"
 #include "core/Service.hpp"
-#include "core/String.hpp"
-#include "database/Artist.hpp"
-#include "database/Cluster.hpp"
-#include "database/Db.hpp"
-#include "database/Release.hpp"
+#include "database/IDb.hpp"
+#include "database/IQueryPlanRecorder.hpp"
 #include "database/Session.hpp"
-#include "database/TrackList.hpp"
-#include "database/User.hpp"
+#include "database/objects/Artist.hpp"
+#include "database/objects/Cluster.hpp"
+#include "database/objects/Release.hpp"
+#include "database/objects/TrackList.hpp"
+#include "database/objects/User.hpp"
 #include "services/artwork/IArtworkService.hpp"
+#include "services/auth/IAuthTokenService.hpp"
 #include "services/auth/IEnvService.hpp"
 #include "services/auth/IPasswordService.hpp"
 #include "services/scrobbling/IScrobblingService.hpp"
@@ -51,18 +52,17 @@
 #include "NotificationContainer.hpp"
 #include "PlayQueue.hpp"
 #include "SettingsView.hpp"
+#include "admin/DebugToolsView.hpp"
 #include "admin/InitWizardView.hpp"
 #include "admin/MediaLibrariesView.hpp"
 #include "admin/ScanSettingsView.hpp"
 #include "admin/ScannerController.hpp"
-#include "admin/TracingView.hpp"
 #include "admin/UserView.hpp"
 #include "admin/UsersView.hpp"
 #include "common/Template.hpp"
 #include "explore/Explore.hpp"
 #include "explore/Filters.hpp"
 #include "resource/ArtworkResource.hpp"
-#include "resource/AudioFileResource.hpp"
 #include "resource/AudioTranscodingResource.hpp"
 
 namespace lms::ui
@@ -76,6 +76,8 @@ namespace lms::ui
             const std::string appRoot{ Wt::WApplication::appRoot() };
 
             auto res{ std::make_shared<Wt::WMessageResourceBundle>() };
+            res->use(appRoot + "admin-db");
+            res->use(appRoot + "admin-debugtools");
             res->use(appRoot + "admin-initwizard");
             res->use(appRoot + "admin-medialibraries");
             res->use(appRoot + "admin-medialibrary");
@@ -133,7 +135,7 @@ namespace lms::ui
             IdxAdminScanner,
             IdxAdminUsers,
             IdxAdminUser,
-            IdxAdminTracing,
+            IdxAdminDebugTools,
         };
 
         void handlePathChange(Wt::WStackedWidget& stack, bool isAdmin)
@@ -159,7 +161,7 @@ namespace lms::ui
                 { "/admin/scanner", IdxAdminScanner, true, Wt::WString::tr("Lms.Admin.ScannerController.scanner") },
                 { "/admin/users", IdxAdminUsers, true, Wt::WString::tr("Lms.Admin.Users.users") },
                 { "/admin/user", IdxAdminUser, true, std::nullopt },
-                { "/admin/tracing", IdxAdminTracing, true, Wt::WString::tr("Lms.Admin.Tracing.tracing") },
+                { "/admin/debug-tools", IdxAdminDebugTools, true, Wt::WString::tr("Lms.Admin.DebugTools.debug-tools") },
             };
 
             LMS_LOG(UI, DEBUG, "Internal path changed to '" << wApp->internalPath() << "'");
@@ -184,22 +186,9 @@ namespace lms::ui
         }
     } // namespace
 
-    std::unique_ptr<Wt::WApplication> LmsApplication::create(const Wt::WEnvironment& env, db::Db& db, LmsApplicationManager& appManager)
+    std::unique_ptr<Wt::WApplication> LmsApplication::create(const Wt::WEnvironment& env, db::IDb& db, LmsApplicationManager& appManager, AuthenticationBackend authBackend)
     {
-        if (auto* authEnvService{ core::Service<auth::IEnvService>::get() })
-        {
-            const auto checkResult{ authEnvService->processEnv(env) };
-            if (checkResult.state != auth::IEnvService::CheckResult::State::Granted)
-            {
-                LMS_LOG(UI, ERROR, "Cannot authenticate user from environment!");
-                // return a blank page
-                return std::make_unique<Wt::WApplication>(env);
-            }
-
-            return std::make_unique<LmsApplication>(env, db, appManager, checkResult.userId);
-        }
-
-        return std::make_unique<LmsApplication>(env, db, appManager);
+        return std::make_unique<LmsApplication>(env, db, appManager, authBackend);
     }
 
     LmsApplication* LmsApplication::instance()
@@ -207,7 +196,7 @@ namespace lms::ui
         return static_cast<LmsApplication*>(Wt::WApplication::instance());
     }
 
-    db::Db& LmsApplication::getDb()
+    db::IDb& LmsApplication::getDb()
     {
         return _db;
     }
@@ -249,17 +238,15 @@ namespace lms::ui
         return _user->userLoginName;
     }
 
-    LmsApplication::LmsApplication(const Wt::WEnvironment& env,
-        db::Db& db,
-        LmsApplicationManager& appManager,
-        std::optional<db::UserId> userId)
+    LmsApplication::LmsApplication(const Wt::WEnvironment& env, db::IDb& db, LmsApplicationManager& appManager, AuthenticationBackend authBackend)
         : Wt::WApplication{ env }
         , _db{ db }
         , _appManager{ appManager }
+        , _authBackend{ authBackend }
     {
         try
         {
-            init(userId);
+            init();
         }
         catch (LmsApplicationException& e)
         {
@@ -275,7 +262,7 @@ namespace lms::ui
 
     LmsApplication::~LmsApplication() = default;
 
-    void LmsApplication::init(std::optional<db::UserId> userId)
+    void LmsApplication::init()
     {
         LMS_SCOPED_TRACE_OVERVIEW("UI", "ApplicationInit");
 
@@ -291,24 +278,38 @@ namespace lms::ui
         // Handle Media Scanner events and other session events
         enableUpdates(true);
 
-        if (userId)
-            onUserLoggedIn(*userId, false /* strongAuth */);
-        else if (core::Service<auth::IPasswordService>::exists())
+        db::UserId userId;
+        switch (_authBackend)
+        {
+        case AuthenticationBackend::Env:
+            {
+                const auto checkResult{ core::Service<auth::IEnvService>::get()->processEnv(environment()) };
+                if (checkResult.state != auth::IEnvService::CheckResult::State::Granted)
+                {
+                    LMS_LOG(UI, ERROR, "Cannot authenticate user from environment!");
+                    throw core::LmsException{ "Cannot authenticate user from environment!" }; // Do not put details here at it may appear on the user rendered html
+                }
+                assert(checkResult.userId.isValid());
+                userId = checkResult.userId;
+            }
+            break;
+
+        case AuthenticationBackend::Internal:
+            [[fallthrough]];
+        case AuthenticationBackend::PAM:
+            // Try to authenticate using auth token ("remember me" checkbox), may fail
+            userId = processAuthToken(environment());
+            break;
+        }
+
+        if (userId.isValid())
+            onUserLoggedIn(userId, false /* strongAuth */);
+        else
             processPasswordAuth();
     }
 
     void LmsApplication::processPasswordAuth()
     {
-        {
-            std::optional<db::UserId> userId{ processAuthToken(environment()) };
-            if (userId)
-            {
-                LMS_LOG(UI, DEBUG, "User authenticated using Auth token!");
-                onUserLoggedIn(*userId, false /* strongAuth */);
-                return;
-            }
-        }
-
         // If here is no account in the database, launch the first connection wizard
         bool firstConnection{};
         {
@@ -318,17 +319,19 @@ namespace lms::ui
 
         LMS_LOG(UI, DEBUG, "Creating root widget. First connection = " << firstConnection);
 
-        if (firstConnection && core::Service<auth::IPasswordService>::get()->canSetPasswords())
+        assert(_authBackend == AuthenticationBackend::Internal || _authBackend == AuthenticationBackend::PAM);
+        auth::IPasswordService& passwordService{ *core::Service<auth::IPasswordService>::get() };
+
+        if (firstConnection && _authBackend == AuthenticationBackend::Internal)
         {
-            root()->addWidget(std::make_unique<InitWizardView>());
+            root()->addNew<InitWizardView>(passwordService);
+            return;
         }
-        else
-        {
-            Auth* auth{ root()->addNew<Auth>() };
-            auth->userLoggedIn.connect(this, [this](db::UserId userId) {
-                onUserLoggedIn(userId, true /* strongAuth */);
-            });
-        }
+
+        PasswordAuth* auth{ root()->addNew<PasswordAuth>(passwordService) };
+        auth->userLoggedIn.connect(this, [this](db::UserId userId) {
+            onUserLoggedIn(userId, true /* strongAuth */);
+        });
     }
 
     void LmsApplication::finalize()
@@ -360,11 +363,7 @@ namespace lms::ui
 
     void LmsApplication::logoutUser()
     {
-        {
-            auto transaction{ getDbSession().createWriteTransaction() };
-            getUser().modify()->clearAuthTokens();
-        }
-
+        core::Service<auth::IAuthTokenService>::get()->clearAuthTokens("ui", getUserId());
         LMS_LOG(UI, INFO, "User '" << getUserLoginName() << " 'logged out");
         goHomeAndQuit();
     }
@@ -465,11 +464,13 @@ namespace lms::ui
             navbar->bindNew<Wt::WAnchor>("scan-settings", Wt::WLink{ Wt::LinkType::InternalPath, "/admin/scan-settings" }, Wt::WString::tr("Lms.Admin.menu-scan-settings"));
             navbar->bindNew<Wt::WAnchor>("scanner", Wt::WLink{ Wt::LinkType::InternalPath, "/admin/scanner" }, Wt::WString::tr("Lms.Admin.menu-scanner"));
             navbar->bindNew<Wt::WAnchor>("users", Wt::WLink{ Wt::LinkType::InternalPath, "/admin/users" }, Wt::WString::tr("Lms.Admin.menu-users"));
-            // Hide the entry if the trace logger is not enabled
-            if (core::Service<core::tracing::ITraceLogger>::get())
-                navbar->bindNew<Wt::WAnchor>("tracing", Wt::WLink{ Wt::LinkType::InternalPath, "/admin/tracing" }, Wt::WString::tr("Lms.Admin.menu-tracing"));
-            else
-                navbar->bindEmpty("tracing");
+            // Hide the entry if no debug service is enabled
+            if (core::Service<core::tracing::ITraceLogger>::get()
+                || core::Service<db::IQueryPlanRecorder>::get())
+            {
+                navbar->setCondition("if-debug-tools", true);
+                navbar->bindNew<Wt::WAnchor>("debug-tools", Wt::WLink{ Wt::LinkType::InternalPath, "/admin/debug-tools" }, Wt::WString::tr("Lms.Admin.menu-debug-tools"));
+            }
         }
 
         // Contents
@@ -490,7 +491,7 @@ namespace lms::ui
             mainStack->addNew<ScannerController>();
             mainStack->addNew<UsersView>();
             mainStack->addNew<UserView>();
-            mainStack->addNew<TracingView>();
+            mainStack->addNew<DebugToolsView>();
         }
 
         explore->getPlayQueueController().setMaxTrackCountToEnqueue(_playQueue->getCapacity());
@@ -541,12 +542,12 @@ namespace lms::ui
                 notifyMsg(Notification::Type::Info,
                     Wt::WString::tr("Lms.Admin.Database.database"),
                     Wt::WString::tr("Lms.Admin.Database.scan-complete")
-                        .arg(static_cast<unsigned>(stats.nbFiles()))
+                        .arg(static_cast<unsigned>(stats.getTotalFileCount()))
                         .arg(static_cast<unsigned>(stats.additions))
                         .arg(static_cast<unsigned>(stats.updates))
                         .arg(static_cast<unsigned>(stats.deletions))
                         .arg(static_cast<unsigned>(stats.duplicates.size()))
-                        .arg(static_cast<unsigned>(stats.errors.size())));
+                        .arg(static_cast<unsigned>(stats.errorsCount)));
             });
         }
 

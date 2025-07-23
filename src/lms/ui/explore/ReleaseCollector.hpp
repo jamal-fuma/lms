@@ -23,9 +23,8 @@
 
 #include "DatabaseCollectorBase.hpp"
 
-#include "database/Object.hpp"
-#include "database/ReleaseId.hpp"
 #include "database/Types.hpp"
+#include "database/objects/ReleaseId.hpp"
 
 namespace lms::db
 {

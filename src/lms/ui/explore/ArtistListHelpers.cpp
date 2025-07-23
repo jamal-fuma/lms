@@ -18,22 +18,28 @@
  */
 #include "ArtistListHelpers.hpp"
 
-#include "database/Artist.hpp"
-#include "database/Session.hpp"
+#include <Wt/WAnchor.h>
 
-#include "LmsApplication.hpp"
+#include "database/objects/Artist.hpp"
+
 #include "Utils.hpp"
 
 namespace lms::ui::ArtistListHelpers
 {
-    std::unique_ptr<Wt::WTemplate> createEntry(const db::ObjectPtr<db::Artist>& artist)
+    std::unique_ptr<Wt::WTemplate> createEntry(const db::Artist::pointer& artist)
     {
         auto entry{ std::make_unique<Wt::WTemplate>(Wt::WString::tr("Lms.Explore.Artists.template.entry")) };
         entry->bindWidget("name", utils::createArtistAnchor(artist));
 
         Wt::WAnchor* anchor{ entry->bindWidget("image", utils::createArtistAnchor(artist, false)) };
-        auto image{ utils::createArtistImage(artist->getId(), ArtworkResource::Size::Large) };
-        image->addStyleClass("Lms-cover-release Lms-cover-anchor");
+
+        std::unique_ptr<Wt::WImage> image;
+        if (artist->getPreferredArtworkId().isValid())
+            image = utils::createArtworkImage(artist->getPreferredArtworkId(), ArtworkResource::DefaultArtworkType::Artist, ArtworkResource::Size::Large);
+        else
+            image = utils::createDefaultArtworkImage(ArtworkResource::DefaultArtworkType::Artist);
+
+        image->addStyleClass("Lms-image-artist Lms-cover-anchor"); // hack
         anchor->setImage(std::move(image));
 
         return entry;

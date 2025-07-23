@@ -22,9 +22,8 @@
 #include <Wt/WLineEdit.h>
 #include <Wt/WPushButton.h>
 
-#include "core/ILogger.hpp"
 #include "database/Session.hpp"
-#include "database/Track.hpp"
+#include "database/objects/Track.hpp"
 
 #include "LmsApplication.hpp"
 #include "SortModeSelector.hpp"

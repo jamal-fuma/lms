@@ -19,20 +19,19 @@
 
 #include "ClustersEngine.hpp"
 
-#include "database/Artist.hpp"
-#include "database/Cluster.hpp"
-#include "database/Db.hpp"
-#include "database/Release.hpp"
+#include "database/IDb.hpp"
 #include "database/Session.hpp"
-#include "database/Track.hpp"
-#include "database/TrackList.hpp"
+#include "database/objects/Artist.hpp"
+#include "database/objects/Cluster.hpp"
+#include "database/objects/Release.hpp"
+#include "database/objects/Track.hpp"
+#include "database/objects/TrackList.hpp"
 
 namespace lms::recommendation
 {
-
     using namespace db;
 
-    std::unique_ptr<IEngine> createClustersEngine(Db& db)
+    std::unique_ptr<IEngine> createClustersEngine(db::IDb& db)
     {
         return std::make_unique<ClusterEngine>(db);
     }
@@ -45,7 +44,7 @@ namespace lms::recommendation
         Session& dbSession{ _db.getTLSSession() };
         auto transaction{ dbSession.createReadTransaction() };
 
-        const auto similarTrackIds{ Track::findSimilarTrackIds(dbSession, trackIds, Range{ 0, maxCount }) };
+        auto similarTrackIds{ Track::findSimilarTrackIds(dbSession, trackIds, Range{ 0, maxCount }) };
         return std::move(similarTrackIds.results);
     }
 
@@ -105,7 +104,7 @@ namespace lms::recommendation
         if (!artist)
             return {};
 
-        const auto similarArtistIds{ artist->findSimilarArtistIds(artistLinkTypes, Range{ 0, maxCount }) };
+        auto similarArtistIds{ artist->findSimilarArtistIds(artistLinkTypes, Range{ 0, maxCount }) };
         return std::move(similarArtistIds.results);
     }
 

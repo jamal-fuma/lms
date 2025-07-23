@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <functional>
@@ -26,6 +27,7 @@
 #include <Wt/WDate.h>
 
 #include "core/Exception.hpp"
+#include "core/TaggedType.hpp"
 
 namespace lms::db
 {
@@ -100,18 +102,33 @@ namespace lms::db
         }
     };
 
-    struct DateRange
+    struct FileStats
     {
-        int begin;
-        int end;
+        std::size_t trackCount;
+        std::size_t imageCount;
+        std::size_t trackLyricsCount;
+        std::size_t playListCount;
+        std::size_t artistInfoCount;
 
-        static DateRange fromYearRange(int from, int to);
+        std::size_t getTotalFileCount() const { return trackCount + imageCount + trackLyricsCount + playListCount + artistInfoCount; }
+    };
+
+    struct YearRange
+    {
+        int begin{};
+        int end{};
     };
 
     struct DiscInfo
     {
         std::size_t position;
         std::string name;
+    };
+
+    struct FileInfo
+    {
+        Wt::WDateTime lastWrittenTime;
+        std::size_t scanVersion{};
     };
 
     enum class ArtistSortMethod
@@ -121,11 +138,26 @@ namespace lms::db
         Name,
         SortName,
         Random,
-        LastWritten,
+        LastWrittenDesc,
+        AddedDesc,
         StarredDateDesc,
     };
 
     enum class ClusterSortMethod
+    {
+        None,
+        Name,
+    };
+
+    enum class DirectorySortMethod
+    {
+        None,
+        Name,
+    };
+
+    using ImageHashType = core::TaggedType<class ImageHash, std::uint64_t>;
+
+    enum class LabelSortMethod
     {
         None,
         Name,
@@ -136,14 +168,31 @@ namespace lms::db
         None,
         Id,
         Name,
+        SortName,
         ArtistNameThenName,
         DateAsc,
         DateDesc,
         OriginalDate,
         OriginalDateDesc,
         Random,
-        LastWritten,
+        LastWrittenDesc,
+        AddedDesc,
         StarredDateDesc,
+    };
+
+    enum class ReleaseTypeSortMethod
+    {
+        None,
+        Name,
+    };
+
+    enum class TrackEmbeddedImageSortMethod
+    {
+        None,
+        SizeDesc,
+        TrackNumberThenSizeDesc,
+        DiscNumberThenTrackNumberThenSizeDesc,
+        TrackListIndexAscThenSizeDesc,
     };
 
     enum class TrackListSortMethod
@@ -158,8 +207,10 @@ namespace lms::db
         None,
         Id,
         Random,
-        LastWritten,
+        LastWrittenDesc,
+        AddedDesc,
         StarredDateDesc,
+        AbsoluteFilePath,
         Name,
         DateDescAndRelease,
         Release,   // order by disc/track number
@@ -171,6 +222,32 @@ namespace lms::db
         None,
         ExternalFirst,
         EmbeddedFirst,
+    };
+
+    enum class ImageType
+    {
+        Unknown = 0,
+        Other = 1,
+        FileIcon = 2,
+        OtherFileIcon = 3,
+        FrontCover = 4,
+        BackCover = 5,
+        LeafletPage = 6,
+        Media = 7,
+        LeadArtist = 8,
+        Artist = 9,
+        Conductor = 10,
+        Band = 11,
+        Composer = 12,
+        Lyricist = 13,
+        RecordingLocation = 14,
+        DuringRecording = 15,
+        DuringPerformance = 16,
+        MovieScreenCapture = 17,
+        ColouredFish = 18,
+        Illustration = 19,
+        BandLogo = 20,
+        PublisherLogo = 21
     };
 
     enum class TrackArtistLinkType
@@ -246,7 +323,15 @@ namespace lms::db
 
     enum class TrackListType
     {
-        Playlist, // user controlled playlists
-        Internal, // internal usage (current playqueue, history, ...)
+        PlayList = 0, // user controlled playlists
+        Internal = 1, // internal usage (current playqueue, history, ...)
+    };
+
+    enum class Advisory
+    {
+        UnSet = 0,
+        Unknown = 1,
+        Clean = 2,
+        Explicit = 3,
     };
 } // namespace lms::db

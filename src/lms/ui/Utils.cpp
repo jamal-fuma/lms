@@ -25,20 +25,33 @@
 #include <Wt/WAnchor.h>
 #include <Wt/WText.h>
 
-#include "database/Artist.hpp"
-#include "database/Cluster.hpp"
-#include "database/Image.hpp"
-#include "database/Release.hpp"
-#include "database/ScanSettings.hpp"
 #include "database/Session.hpp"
-#include "database/Track.hpp"
-#include "database/TrackList.hpp"
+#include "database/objects/Artist.hpp"
+#include "database/objects/Cluster.hpp"
+#include "database/objects/Image.hpp"
+#include "database/objects/Release.hpp"
+#include "database/objects/ScanSettings.hpp"
+#include "database/objects/Track.hpp"
+#include "database/objects/TrackList.hpp"
 
 #include "LmsApplication.hpp"
+#include "ModalManager.hpp"
 #include "explore/Filters.hpp"
 
 namespace lms::ui::utils
 {
+    namespace
+    {
+        std::unique_ptr<Wt::WImage> createArtworkImage()
+        {
+            auto image{ std::make_unique<Wt::WImage>() };
+            image->setStyleClass("Lms-cover img-fluid");                                          // HACK
+            image->setAttributeValue("onload", LmsApp->javaScriptClass() + ".onLoadCover(this)"); // HACK
+
+            return image;
+        }
+    } // namespace
+
     std::string durationToString(std::chrono::milliseconds msDuration)
     {
         const std::chrono::seconds duration{ std::chrono::duration_cast<std::chrono::seconds>(msDuration) };
@@ -63,32 +76,30 @@ namespace lms::ui::utils
         return oss.str();
     }
 
-    std::unique_ptr<Wt::WImage> createArtistImage(db::ArtistId artistId, ArtworkResource::Size size)
+    void showArtworkModal(Wt::WLink image)
     {
-        auto image{ std::make_unique<Wt::WImage>() };
-        image->setImageLink(LmsApp->getArtworkResource()->getArtistImageUrl(artistId, size));
-        image->setStyleClass("Lms-cover img-fluid");                                          // HACK
-        image->setAttributeValue("onload", LmsApp->javaScriptClass() + ".onLoadCover(this)"); // HACK
+        auto rawImage{ std::make_unique<Wt::WTemplate>(Wt::WString::tr("Lms.Explore.template.full-modal-artwork")) };
+        rawImage->bindNew<Wt::WImage>("artwork", image);
+
+        Wt::WTemplate* rawImagePtr{ rawImage.get() };
+        rawImage->clicked().connect([=] {
+            LmsApp->getModalManager().dispose(rawImagePtr);
+        });
+        LmsApp->getModalManager().show(std::move(rawImage));
+    }
+
+    std::unique_ptr<Wt::WImage> createArtworkImage(db::ArtworkId artworkId, ArtworkResource::DefaultArtworkType type, ArtworkResource::Size size)
+    {
+        auto image{ createArtworkImage() };
+        image->setImageLink(LmsApp->getArtworkResource()->getArtworkUrl(artworkId, type, size));
         return image;
     }
 
-    std::unique_ptr<Wt::WImage> createReleaseCover(db::ReleaseId releaseId, ArtworkResource::Size size)
+    std::unique_ptr<Wt::WImage> createDefaultArtworkImage(ArtworkResource::DefaultArtworkType type)
     {
-        auto cover{ std::make_unique<Wt::WImage>() };
-        cover->setImageLink(LmsApp->getArtworkResource()->getReleaseCoverUrl(releaseId, size));
-        cover->setStyleClass("Lms-cover img-fluid");                                          // HACK
-        cover->setAttributeValue("onload", LmsApp->javaScriptClass() + ".onLoadCover(this)"); // HACK
-        return cover;
-    }
-
-    std::unique_ptr<Wt::WImage> createTrackImage(db::TrackId trackId, ArtworkResource::Size size)
-    {
-        auto cover{ std::make_unique<Wt::WImage>() };
-        cover->setImageLink(LmsApp->getArtworkResource()->getTrackImageUrl(trackId, size));
-        cover->setStyleClass("Lms-cover img-fluid");                                          // HACK
-        cover->setAttributeValue("onload", LmsApp->javaScriptClass() + ".onLoadCover(this)"); // HACK
-
-        return cover;
+        auto image{ createArtworkImage() };
+        image->setImageLink(LmsApp->getArtworkResource()->getDefaultArtworkUrl(type));
+        return image;
     }
 
     std::unique_ptr<Wt::WInteractWidget> createFilter(const Wt::WString& name, const Wt::WString& tooltip, std::string_view colorStyleClass, bool canDelete)
@@ -299,10 +310,16 @@ namespace lms::ui::utils
     std::unique_ptr<Wt::WAnchor> createReleaseAnchor(db::Release::pointer release, bool setText)
     {
         auto res = std::make_unique<Wt::WAnchor>(createReleaseLink(release));
-
         if (setText)
         {
             std::string releaseName{ release->getName() };
+            if (std::string_view releaseComment{ release->getComment() }; !releaseComment.empty())
+            {
+                releaseName += " [";
+                releaseName += releaseComment;
+                releaseName += ']';
+            }
+
             res->setTextFormat(Wt::TextFormat::Plain);
             res->setText(Wt::WString::fromUTF8(releaseName));
             res->setToolTip(Wt::WString::fromUTF8(releaseName), Wt::TextFormat::Plain);

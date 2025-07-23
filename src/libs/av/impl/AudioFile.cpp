@@ -28,11 +28,12 @@ extern "C"
 }
 
 #include <array>
-#include <map>
 #include <unordered_map>
 
 #include "core/ILogger.hpp"
 #include "core/String.hpp"
+
+#include "av/Exception.hpp"
 
 namespace lms::av
 {
@@ -43,9 +44,9 @@ namespace lms::av
             std::array<char, 128> buf = { 0 };
 
             if (::av_strerror(error, buf.data(), buf.size()) == 0)
-                return &buf[0];
-            else
-                return "Unknown error";
+                return buf.data();
+
+            return "Unknown error";
         }
 
         class AudioFileException : public Exception
@@ -128,17 +129,17 @@ namespace lms::av
     AudioFile::AudioFile(const std::filesystem::path& p)
         : _p{ p }
     {
-        int error{ avformat_open_input(&_context, _p.string().c_str(), nullptr, nullptr) };
+        int error{ avformat_open_input(&_context, _p.c_str(), nullptr, nullptr) };
         if (error < 0)
         {
-            LMS_LOG(AV, ERROR, "Cannot open " << _p.string() << ": " << averror_to_string(error));
+            LMS_LOG(AV, ERROR, "Cannot open " << _p << ": " << averror_to_string(error));
             throw AudioFileException{ error };
         }
 
         error = avformat_find_stream_info(_context, nullptr);
         if (error < 0)
         {
-            LMS_LOG(AV, ERROR, "Cannot find stream information on " << _p.string() << ": " << averror_to_string(error));
+            LMS_LOG(AV, ERROR, "Cannot find stream information on " << _p << ": " << averror_to_string(error));
             avformat_close_input(&_context);
             throw AudioFileException{ error };
         }
@@ -158,7 +159,7 @@ namespace lms::av
     {
         ContainerInfo info;
         info.bitrate = _context->bit_rate;
-        info.duration = std::chrono::milliseconds{ _context->duration == AV_NOPTS_VALUE ? 0 : _context->duration / AV_TIME_BASE * 1000 };
+        info.duration = std::chrono::milliseconds{ _context->duration == AV_NOPTS_VALUE ? 0 : _context->duration / AV_TIME_BASE * 1'000 };
         info.name = _context->iformat->name;
 
         return info;
@@ -237,14 +238,13 @@ namespace lms::av
         return false;
     }
 
-    void AudioFile::visitAttachedPictures(std::function<void(const Picture&)> func) const
+    void AudioFile::visitAttachedPictures(std::function<void(const Picture&, const MetadataMap&)> func) const
     {
         static const std::unordered_map<int, std::string> codecMimeMap{
-            { AV_CODEC_ID_BMP, "image/x-bmp" },
+            { AV_CODEC_ID_BMP, "image/bmp" },
             { AV_CODEC_ID_GIF, "image/gif" },
             { AV_CODEC_ID_MJPEG, "image/jpeg" },
             { AV_CODEC_ID_PNG, "image/png" },
-            { AV_CODEC_ID_PNG, "image/x-png" },
             { AV_CODEC_ID_PPM, "image/x-portable-pixmap" },
         };
 
@@ -262,6 +262,9 @@ namespace lms::av
                 continue;
             }
 
+            MetadataMap metadata;
+            getMetaDataFromDictionnary(avstream->metadata, metadata);
+
             Picture picture;
 
             auto itMime = codecMimeMap.find(avstream->codecpar->codec_id);
@@ -277,10 +280,8 @@ namespace lms::av
 
             const AVPacket& pkt{ avstream->attached_pic };
 
-            picture.data = reinterpret_cast<const std::byte*>(pkt.data);
-            picture.dataSize = pkt.size;
-
-            func(picture);
+            picture.data = std::span{ reinterpret_cast<const std::byte*>(pkt.data), static_cast<std::size_t>(pkt.size) };
+            func(picture, metadata);
         }
     }
 
@@ -318,43 +319,5 @@ namespace lms::av
         res->sampleRate = static_cast<std::size_t>(avstream->codecpar->sample_rate);
 
         return res;
-    }
-
-    std::string_view getMimeType(const std::filesystem::path& fileExtension)
-    {
-        // List should be sync with the demuxers shipped in the lms's docker version
-        // + the _audioFileExtensions in ScanSettings
-        // std::filesystem::path does not seem to have std::hash specialization on freebsd
-        static const std::unordered_map<std::string, std::string_view> entries{
-            { ".mp3", "audio/mpeg" },
-            { ".ogg", "audio/ogg" },
-            { ".oga", "audio/ogg" },
-            { ".opus", "audio/opus" },
-            { ".aac", "audio/aac" },
-            { ".alac", "audio/mp4" },
-            { ".m4a", "audio/mp4" },
-            { ".m4b", "audio/mp4" },
-            { ".flac", "audio/flac" },
-            { ".webm", "audio/webm" },
-            { ".wav", "audio/x-wav" },
-            { ".wma", "audio/x-ms-wma" },
-            { ".ape", "audio/x-monkeys-audio" },
-            { ".mpc", "audio/x-musepack" },
-            { ".shn", "audio/x-shn" },
-            { ".aif", "audio/x-aiff" },
-            { ".aiff", "audio/x-aiff" },
-            { ".m3u", "audio/x-mpegurl" },
-            { ".pls", "audio/x-scpls" },
-            { ".dsf", "audio/x-dsd" },
-            { ".wv", "audio/x-wavpack" },
-            { ".wvp", "audio/x-wavpack" },
-            { ".mka", "audio/x-matroska" },
-        };
-
-        auto it{ entries.find(core::stringUtils::stringToLower(fileExtension.string())) };
-        if (it == std::cend(entries))
-            return "";
-
-        return it->second;
     }
 } // namespace lms::av

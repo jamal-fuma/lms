@@ -23,11 +23,10 @@
 #include <memory>
 
 #include "core/IZipper.hpp"
-#include "core/ZipperResourceHandlerCreator.hpp"
-#include "database/ArtistId.hpp"
-#include "database/ReleaseId.hpp"
-#include "database/TrackId.hpp"
-#include "database/TrackListId.hpp"
+#include "database/objects/ArtistId.hpp"
+#include "database/objects/ReleaseId.hpp"
+#include "database/objects/TrackId.hpp"
+#include "database/objects/TrackListId.hpp"
 
 namespace lms::ui
 {
@@ -36,7 +35,7 @@ namespace lms::ui
     public:
         static constexpr std::size_t bufferSize{ 32768 };
 
-        ~DownloadResource();
+        ~DownloadResource() override;
 
     private:
         void handleRequest(const Wt::Http::Request& request, Wt::Http::Response& response) override;

@@ -21,11 +21,11 @@
 
 #include "IConstraint.hpp"
 
-#include "database/ReleaseId.hpp"
+#include "database/objects/ReleaseId.hpp"
 
 namespace lms::db
 {
-    class Db;
+    class IDb;
 }
 
 namespace lms::recommendation::PlaylistGeneratorConstraint
@@ -33,13 +33,16 @@ namespace lms::recommendation::PlaylistGeneratorConstraint
     class ConsecutiveReleases : public IConstraint
     {
     public:
-        ConsecutiveReleases(db::Db& db);
+        ConsecutiveReleases(db::IDb& db);
+        ~ConsecutiveReleases() override = default;
+        ConsecutiveReleases(const ConsecutiveReleases&) = delete;
+        ConsecutiveReleases& operator=(const ConsecutiveReleases&) = delete;
 
     private:
         float computeScore(const std::vector<db::TrackId>& trackIds, std::size_t trackIndex) override;
 
         db::ReleaseId getReleaseId(db::TrackId trackId);
 
-        db::Db& _db;
+        db::IDb& _db;
     };
 } // namespace lms::recommendation::PlaylistGeneratorConstraint

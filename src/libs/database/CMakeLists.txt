@@ -1,32 +1,42 @@
-add_library(lmsdatabase SHARED
-	impl/Artist.cpp
-	impl/AuthToken.cpp
-	impl/Cluster.cpp
+add_library(lmsdatabase STATIC
+	impl/objects/Artist.cpp
+	impl/objects/ArtistInfo.cpp
+	impl/objects/Artwork.cpp
+	impl/objects/AuthToken.cpp
+	impl/objects/Cluster.cpp
+	impl/objects/Directory.cpp
+	impl/objects/Image.cpp
+	impl/objects/Listen.cpp
+	impl/objects/MediaLibrary.cpp
+	impl/objects/PlayListFile.cpp
+	impl/objects/PlayQueue.cpp
+	impl/objects/TrackArtistLink.cpp
+	impl/objects/TrackFeatures.cpp
+	impl/objects/TrackList.cpp
+	impl/objects/RatedArtist.cpp
+	impl/objects/RatedRelease.cpp
+	impl/objects/RatedTrack.cpp
+	impl/objects/Release.cpp
+	impl/objects/ScanSettings.cpp
+	impl/objects/StarredArtist.cpp
+	impl/objects/StarredRelease.cpp
+	impl/objects/StarredTrack.cpp
+	impl/objects/Track.cpp
+	impl/objects/TrackBookmark.cpp
+	impl/objects/TrackEmbeddedImage.cpp
+	impl/objects/TrackEmbeddedImageLink.cpp
+	impl/objects/TrackLyrics.cpp
+	impl/objects/UIState.cpp
+	impl/objects/User.cpp
 	impl/Db.cpp
-	impl/Directory.cpp
-	impl/Image.cpp
-	impl/Listen.cpp
-	impl/MediaLibrary.cpp
+	impl/IdType.cpp
 	impl/Migration.cpp
-	impl/TrackArtistLink.cpp
-	impl/TrackFeatures.cpp
-	impl/TrackList.cpp
-	impl/RatedArtist.cpp
-	impl/RatedRelease.cpp
-	impl/RatedTrack.cpp
-	impl/Release.cpp
-	impl/ScanSettings.cpp
+	impl/Object.cpp
+	impl/QueryPlanRecorder.cpp
 	impl/Session.cpp
-	impl/StarredArtist.cpp
-	impl/StarredRelease.cpp
-	impl/StarredTrack.cpp
 	impl/SqlQuery.cpp
-	impl/Track.cpp
-	impl/TrackBookmark.cpp
-	impl/TrackLyrics.cpp
+	impl/Transaction.cpp
 	impl/Types.cpp
-	impl/UIState.cpp
-	impl/User.cpp
 	impl/Utils.cpp
 	)
 
@@ -39,6 +49,7 @@ target_include_directories(lmsdatabase INTERFACE
 	)
 
 target_include_directories(lmsdatabase PRIVATE
+	impl
 	include
 	)
 
@@ -51,8 +62,6 @@ target_link_libraries(lmsdatabase PUBLIC
 	std::filesystem
 	Wt::Dbo
 	)
-
-install(TARGETS lmsdatabase DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 if(BUILD_TESTING)
 	add_subdirectory(test)

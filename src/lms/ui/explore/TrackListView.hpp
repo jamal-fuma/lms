@@ -19,8 +19,7 @@
 
 #pragma once
 
-#include "database/TrackListId.hpp"
-#include "database/Types.hpp"
+#include "database/objects/TrackListId.hpp"
 
 #include "common/Template.hpp"
 

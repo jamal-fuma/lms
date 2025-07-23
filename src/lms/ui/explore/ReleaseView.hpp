@@ -20,7 +20,8 @@
 #pragma once
 
 #include "database/Object.hpp"
-#include "database/ReleaseId.hpp"
+#include "database/objects/ArtworkId.hpp"
+#include "database/objects/ReleaseId.hpp"
 
 #include "common/Template.hpp"
 
@@ -41,10 +42,12 @@ namespace lms::ui
 
     private:
         void refreshView();
+        void refreshArtwork(db::ArtworkId artworkId);
         void refreshReleaseArtists(const db::ObjectPtr<db::Release>& release);
         void refreshCopyright(const db::ObjectPtr<db::Release>& release);
         void refreshLinks(const db::ObjectPtr<db::Release>& release);
-        void refreshSimilarReleases(const std::vector<db::ReleaseId>& similarReleasesId);
+        void refreshOtherVersions(const db::ObjectPtr<db::Release>& release);
+        void refreshSimilarReleases(const std::vector<db::ReleaseId>& similarReleaseIds);
 
         Filters& _filters;
         PlayQueueController& _playQueueController;

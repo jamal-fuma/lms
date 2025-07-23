@@ -20,6 +20,7 @@
 #include "core/String.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <iomanip>
 #include <utility>
 
@@ -321,6 +322,18 @@ namespace lms::core::stringUtils
         return true;
     }
 
+    std::string_view::size_type stringCaseInsensitiveContains(std::string_view str, std::string_view strtoFind)
+    {
+        if (str.empty() && strtoFind.empty())
+            return true; // same as std
+
+        const auto it{ std::search(
+            std::cbegin(str), std::cend(str),
+            std::cbegin(strtoFind), std::cend(strtoFind),
+            [](char chA, char chB) { return std::tolower(chA) == std::tolower(chB); }) };
+        return (it != std::cend(str));
+    }
+
     void capitalize(std::string& str)
     {
         for (auto it{ std::begin(str) }; it != std::end(str); ++it)
@@ -454,14 +467,33 @@ namespace lms::core::stringUtils
 
     std::string toISO8601String(const Wt::WDateTime& dateTime)
     {
-        // assume UTC
-        return dateTime.toString("yyyy-MM-ddThh:mm:ss.zzz", false).toUTF8();
+        if (dateTime.isValid())
+        {
+            // assume UTC
+            return dateTime.toString("yyyy-MM-ddThh:mm:ss.zzz", false).toUTF8() + 'Z';
+        }
+
+        return "";
     }
 
     std::string toISO8601String(const Wt::WDate& date)
     {
+        if (date.isValid())
+        {
+            // assume UTC
+            return date.toString("yyyy-MM-dd").toUTF8();
+        }
+
+        return "";
+    }
+
+    Wt::WDateTime fromISO8601String(std::string_view dateTime)
+    {
         // assume UTC
-        return date.toString("yyyy-MM-dd").toUTF8();
+        if (!dateTime.empty() && dateTime.back() == 'Z')
+            dateTime.remove_suffix(1);
+
+        return Wt::WDateTime::fromString(Wt::WString{ std::string{ dateTime } }, "yyyy-MM-ddThh:mm:ss.zzz");
     }
 
     std::string formatTimestamp(std::chrono::milliseconds timestamp)

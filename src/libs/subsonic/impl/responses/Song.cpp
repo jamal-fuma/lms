@@ -19,26 +19,30 @@
 
 #include "responses/Song.hpp"
 
+#include <filesystem>
 #include <string_view>
+#include <system_error>
 
-#include "av/IAudioFile.hpp"
 #include "core/ITraceLogger.hpp"
+#include "core/MimeTypes.hpp"
 #include "core/Service.hpp"
 #include "core/String.hpp"
-#include "database/Artist.hpp"
-#include "database/Cluster.hpp"
-#include "database/Directory.hpp"
-#include "database/Image.hpp"
-#include "database/Release.hpp"
-#include "database/Track.hpp"
-#include "database/TrackArtistLink.hpp"
-#include "database/User.hpp"
+#include "database/Types.hpp"
+#include "database/objects/Artist.hpp"
+#include "database/objects/Artwork.hpp"
+#include "database/objects/Cluster.hpp"
+#include "database/objects/Directory.hpp"
+#include "database/objects/MediaLibrary.hpp"
+#include "database/objects/Release.hpp"
+#include "database/objects/Track.hpp"
+#include "database/objects/TrackArtistLink.hpp"
+#include "database/objects/User.hpp"
 #include "services/feedback/IFeedbackService.hpp"
 #include "services/scrobbling/IScrobblingService.hpp"
 
+#include "CoverArtId.hpp"
 #include "RequestContext.hpp"
 #include "SubsonicId.hpp"
-#include "Utils.hpp"
 #include "responses/Artist.hpp"
 #include "responses/Contributor.hpp"
 #include "responses/ItemGenre.hpp"
@@ -89,10 +93,21 @@ namespace lms::api::subsonic
             trackResponse.setAttribute("track", *track->getTrackNumber());
         if (track->getDiscNumber())
             trackResponse.setAttribute("discNumber", *track->getDiscNumber());
-        if (track->getYear())
-            trackResponse.setAttribute("year", *track->getYear());
+        if (const auto originalYear{ track->getOriginalYear() })
+            trackResponse.setAttribute("year", *originalYear);
+        else if (const auto year{ track->getYear() })
+            trackResponse.setAttribute("year", *year);
         trackResponse.setAttribute("playCount", core::Service<scrobbling::IScrobblingService>::get()->getCount(context.user->getId(), track->getId()));
-        trackResponse.setAttribute("path", track->getRelativeFilePath().string());
+
+        // maybe not available if user just removed the library without rescanning
+        if (const db::MediaLibrary::pointer library{ track->getMediaLibrary() })
+        {
+            std::error_code ec;
+            const std::filesystem::path relativeTrackPath{ std::filesystem::relative(track->getAbsoluteFilePath(), library->getPath(), ec) };
+            if (!ec && !relativeTrackPath.empty())
+                trackResponse.setAttribute("path", relativeTrackPath.c_str());
+        }
+
         trackResponse.setAttribute("size", track->getFileSize());
 
         if (track->getAbsoluteFilePath().has_extension())
@@ -101,18 +116,22 @@ namespace lms::api::subsonic
             trackResponse.setAttribute("suffix", extension.string().substr(1) /* skip leading .*/);
         }
 
+        if (context.user->getSubsonicEnableTranscodingByDefault())
         {
             const std::string fileSuffix{ formatToSuffix(context.user->getSubsonicDefaultTranscodingOutputFormat()) };
             trackResponse.setAttribute("transcodedSuffix", fileSuffix);
-            trackResponse.setAttribute("transcodedContentType", av::getMimeType(std::filesystem::path{ "." + fileSuffix }));
+            trackResponse.setAttribute("transcodedContentType", core::getMimeType(std::filesystem::path{ "." + fileSuffix }));
         }
 
-        const Release::pointer release{ track->getRelease() };
+        auto artwork{ track->getPreferredMediaArtwork() };
+        if (!artwork)
+            artwork = track->getPreferredArtwork();
 
-        if (track->hasCover())
-            trackResponse.setAttribute("coverArt", idToString(track->getId()));
-        else if (release && release->getImage())
-            trackResponse.setAttribute("coverArt", idToString(release->getId()));
+        if (artwork)
+        {
+            CoverArtId coverArtId{ artwork->getId(), artwork->getLastWrittenTime().toTime_t() };
+            trackResponse.setAttribute("coverArt", idToString(coverArtId));
+        }
 
         const std::vector<Artist::pointer>& artists{ track->getArtists({ TrackArtistLinkType::Artist }) };
         if (!artists.empty())
@@ -126,6 +145,7 @@ namespace lms::api::subsonic
                 trackResponse.setAttribute("artistId", idToString(artists.front()->getId()));
         }
 
+        const Release::pointer release{ track->getRelease() };
         if (release)
         {
             trackResponse.setAttribute("album", release->getName());
@@ -135,8 +155,8 @@ namespace lms::api::subsonic
         trackResponse.setAttribute("duration", std::chrono::duration_cast<std::chrono::seconds>(track->getDuration()).count());
         trackResponse.setAttribute("bitRate", (track->getBitrate() / 1000));
         trackResponse.setAttribute("type", "music");
-        trackResponse.setAttribute("created", core::stringUtils::toISO8601String(track->getLastWritten()));
-        trackResponse.setAttribute("contentType", av::getMimeType(track->getAbsoluteFilePath().extension()));
+        trackResponse.setAttribute("created", core::stringUtils::toISO8601String(track->getAddedTime()));
+        trackResponse.setAttribute("contentType", core::getMimeType(track->getAbsoluteFilePath().extension()));
         if (const auto rating{ core::Service<feedback::IFeedbackService>::get()->getRating(context.user->getId(), track->getId()) })
             trackResponse.setAttribute("userRating", *rating);
 
@@ -217,6 +237,22 @@ namespace lms::api::subsonic
         trackResponse.createEmptyArrayChild("genres");
         for (const auto& genre : genres)
             trackResponse.addArrayChild("genres", createItemGenreNode(genre->getName()));
+
+        auto advisoryToExplicitStatus = [](db::Advisory advisory) -> std::string_view {
+            switch (advisory)
+            {
+            case db::Advisory::Clean:
+                return "clean";
+            case db::Advisory::Explicit:
+                return "expicit";
+            case db::Advisory::Unknown:
+            case db::Advisory::UnSet:
+                break;
+            }
+
+            return "";
+        };
+        trackResponse.setAttribute("explicitStatus", advisoryToExplicitStatus(track->getAdvisory()));
 
         trackResponse.addChild("replayGain", createReplayGainNode(track));
 

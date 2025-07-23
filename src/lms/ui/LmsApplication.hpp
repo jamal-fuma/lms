@@ -27,15 +27,15 @@
 
 #include "database/Object.hpp"
 #include "database/Types.hpp"
-#include "database/UserId.hpp"
+#include "database/objects/UserId.hpp"
 #include "services/scanner/ScannerEvents.hpp"
 
+#include "Auth.hpp"
 #include "Notification.hpp"
-#include "admin/ScannerController.hpp"
 
 namespace lms::db
 {
-    class Db;
+    class IDb;
     class Session;
     class User;
 } // namespace lms::db
@@ -53,15 +53,15 @@ namespace lms::ui
     class LmsApplication : public Wt::WApplication
     {
     public:
-        LmsApplication(const Wt::WEnvironment& env, db::Db& db, LmsApplicationManager& appManager, std::optional<db::UserId> userId = std::nullopt);
+        LmsApplication(const Wt::WEnvironment& env, db::IDb& db, LmsApplicationManager& appManager, AuthenticationBackend authBackend);
         ~LmsApplication();
 
-        static std::unique_ptr<Wt::WApplication> create(const Wt::WEnvironment& env, db::Db& db, LmsApplicationManager& appManager);
+        static std::unique_ptr<Wt::WApplication> create(const Wt::WEnvironment& env, db::IDb& db, LmsApplicationManager& appManager, AuthenticationBackend authBackend);
         static LmsApplication* instance();
 
         // Session application data
         std::shared_ptr<ArtworkResource> getArtworkResource() { return _artworkResource; }
-        db::Db& getDb();
+        db::IDb& getDb();
         db::Session& getDbSession(); // always thread safe
 
         db::ObjectPtr<db::User> getUser();
@@ -72,6 +72,8 @@ namespace lms::ui
 
         // Proxified scanner events
         scanner::Events& getScannerEvents() { return _scannerEvents; }
+
+        AuthenticationBackend getAuthBackend() const { return _authBackend; }
 
         // Utils
         void post(std::function<void()> func);
@@ -88,7 +90,7 @@ namespace lms::ui
         Wt::Signal<>& preQuit() { return _preQuit; }
 
     private:
-        void init(std::optional<db::UserId> userId);
+        void init();
         void processPasswordAuth();
         void handleException(LmsApplicationException& e);
         void goHomeAndQuit();
@@ -103,9 +105,10 @@ namespace lms::ui
         void setUserInfo(db::UserId userId, bool strongAuth);
         void createHome();
 
-        db::Db& _db;
+        db::IDb& _db;
         Wt::Signal<> _preQuit;
         LmsApplicationManager& _appManager;
+        const AuthenticationBackend _authBackend;
         scanner::Events _scannerEvents;
         struct UserAuthInfo
         {

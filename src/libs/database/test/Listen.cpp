@@ -17,7 +17,7 @@
  * along with LMS.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "database/Listen.hpp"
+#include "database/objects/Listen.hpp"
 
 #include "Common.hpp"
 
@@ -216,7 +216,7 @@ namespace lms::db::tests
                 Listen::ArtistStatsFindParameters params;
                 params.setUser(user->getId());
                 params.setScrobblingBackend(ScrobblingBackend::Internal);
-                params.setClusters({ cluster->getId() });
+                params.filters.setClusters(std::initializer_list<ClusterId>{ cluster->getId() });
 
                 auto artists{ Listen::getTopArtists(session, params) };
                 EXPECT_EQ(artists.results.size(), 0);
@@ -313,7 +313,7 @@ namespace lms::db::tests
             Listen::ArtistStatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setClusters({ cluster.getId() });
+            params.filters.setClusters(std::initializer_list<ClusterId>{ cluster.getId() });
 
             auto artists{ Listen::getTopArtists(session, params) };
             ASSERT_EQ(artists.results.size(), 0);
@@ -328,7 +328,7 @@ namespace lms::db::tests
             Listen::ArtistStatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setClusters({ cluster.getId() });
+            params.filters.setClusters(std::initializer_list<ClusterId>{ cluster.getId() });
 
             auto artists{ Listen::getTopArtists(session, params) };
             ASSERT_EQ(artists.results.size(), 1);
@@ -343,8 +343,8 @@ namespace lms::db::tests
         ScopedUser user{ session, "MyUser" };
         const Wt::WDateTime dateTime1{ Wt::WDate{ 2000, 1, 2 }, Wt::WTime{ 12, 0, 1 } };
         ScopedListen listen{ session, user.lockAndGet(), track.lockAndGet(), ScrobblingBackend::Internal, dateTime1 };
-        ScopedMediaLibrary library{ session };
-        ScopedMediaLibrary otherLibrary{ session };
+        ScopedMediaLibrary library{ session, "MyLibrary", "/root" };
+        ScopedMediaLibrary otherLibrary{ session, "OtherLibrary", "/otherRoot" };
 
         {
             auto transaction{ session.createReadTransaction() };
@@ -352,7 +352,7 @@ namespace lms::db::tests
             Listen::ArtistStatsFindParameters params;
             params.setUser(user.getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setMediaLibrary(library.getId());
+            params.filters.setMediaLibrary(library.getId());
 
             const auto artists{ Listen::getTopArtists(session, params) };
             EXPECT_EQ(artists.results.size(), 0);
@@ -383,7 +383,7 @@ namespace lms::db::tests
             Listen::ArtistStatsFindParameters params;
             params.setUser(user.getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setMediaLibrary(library.getId());
+            params.filters.setMediaLibrary(library.getId());
 
             auto artists{ Listen::getTopArtists(session, params) };
             ASSERT_EQ(artists.results.size(), 1);
@@ -395,7 +395,7 @@ namespace lms::db::tests
             Listen::ArtistStatsFindParameters params;
             params.setUser(user.getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setMediaLibrary(otherLibrary.getId());
+            params.filters.setMediaLibrary(otherLibrary.getId());
 
             auto artists{ Listen::getTopArtists(session, params) };
             EXPECT_EQ(artists.results.size(), 0);
@@ -533,7 +533,7 @@ namespace lms::db::tests
             Listen::StatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setClusters({ cluster.getId() });
+            params.filters.setClusters(std::initializer_list<ClusterId>{ cluster.getId() });
 
             auto releases{ Listen::getTopReleases(session, params) };
             EXPECT_EQ(releases.results.size(), 0);
@@ -549,7 +549,7 @@ namespace lms::db::tests
             Listen::StatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setClusters({ cluster.getId() });
+            params.filters.setClusters(std::initializer_list<ClusterId>{ cluster.getId() });
 
             auto releases{ Listen::getTopReleases(session, params) };
             EXPECT_EQ(releases.results.size(), 1);
@@ -563,8 +563,8 @@ namespace lms::db::tests
         ScopedUser user{ session, "MyUser" };
         const Wt::WDateTime dateTime{ Wt::WDate{ 2000, 1, 2 }, Wt::WTime{ 12, 0, 1 } };
         ScopedRelease release{ session, "MyRelease" };
-        ScopedMediaLibrary library{ session };
-        ScopedMediaLibrary otherLibrary{ session };
+        ScopedMediaLibrary library{ session, "MyLibrary", "/root" };
+        ScopedMediaLibrary otherLibrary{ session, "OtherLibrary", "/otherRoot" };
 
         {
             auto transaction{ session.createWriteTransaction() };
@@ -578,7 +578,7 @@ namespace lms::db::tests
             Listen::StatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setMediaLibrary(library.getId());
+            params.filters.setMediaLibrary(library.getId());
 
             auto releases{ Listen::getTopReleases(session, params) };
             EXPECT_EQ(releases.moreResults, false);
@@ -593,7 +593,7 @@ namespace lms::db::tests
             Listen::StatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setMediaLibrary(library.getId());
+            params.filters.setMediaLibrary(library.getId());
 
             auto releases{ Listen::getTopReleases(session, params) };
             EXPECT_EQ(releases.moreResults, false);
@@ -606,7 +606,7 @@ namespace lms::db::tests
             Listen::StatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setMediaLibrary(otherLibrary.getId());
+            params.filters.setMediaLibrary(otherLibrary.getId());
 
             auto releases{ Listen::getTopReleases(session, params) };
             EXPECT_EQ(releases.moreResults, false);
@@ -780,7 +780,7 @@ namespace lms::db::tests
             Listen::StatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setClusters({ cluster.getId() });
+            params.filters.setClusters(std::initializer_list<ClusterId>{ cluster.getId() });
 
             auto tracks{ Listen::getTopTracks(session, params) };
             EXPECT_EQ(tracks.results.size(), 0);
@@ -796,7 +796,7 @@ namespace lms::db::tests
             Listen::StatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setClusters({ cluster.getId() });
+            params.filters.setClusters(std::initializer_list<ClusterId>{ cluster.getId() });
 
             auto tracks{ Listen::getTopTracks(session, params) };
             EXPECT_EQ(tracks.results.size(), 1);
@@ -809,8 +809,8 @@ namespace lms::db::tests
         ScopedTrack track{ session };
         ScopedUser user{ session, "MyUser" };
         const Wt::WDateTime dateTime{ Wt::WDate{ 2000, 1, 2 }, Wt::WTime{ 12, 0, 1 } };
-        ScopedMediaLibrary library{ session };
-        ScopedMediaLibrary otherLibrary{ session };
+        ScopedMediaLibrary library{ session, "MyLibrary", "/root" };
+        ScopedMediaLibrary otherLibrary{ session, "OtherLibrary", "/otherRoot" };
 
         {
             auto transaction{ session.createReadTransaction() };
@@ -818,7 +818,7 @@ namespace lms::db::tests
             Listen::StatsFindParameters params;
             params.setUser(user.getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setMediaLibrary(library.getId());
+            params.filters.setMediaLibrary(library.getId());
 
             auto tracks{ Listen::getTopTracks(session, params) };
             EXPECT_EQ(tracks.moreResults, false);
@@ -838,7 +838,7 @@ namespace lms::db::tests
             Listen::StatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setMediaLibrary(library.getId());
+            params.filters.setMediaLibrary(library.getId());
 
             auto tracks{ Listen::getTopTracks(session, params) };
             EXPECT_EQ(tracks.moreResults, false);
@@ -851,7 +851,7 @@ namespace lms::db::tests
             Listen::StatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setMediaLibrary(otherLibrary.getId());
+            params.filters.setMediaLibrary(otherLibrary.getId());
 
             auto tracks{ Listen::getTopTracks(session, params) };
             EXPECT_EQ(tracks.moreResults, false);
@@ -927,7 +927,7 @@ namespace lms::db::tests
                 Listen::ArtistStatsFindParameters params;
                 params.setUser(user->getId());
                 params.setScrobblingBackend(ScrobblingBackend::Internal);
-                params.setClusters({ cluster->getId() });
+                params.filters.setClusters(std::initializer_list<ClusterId>{ cluster->getId() });
 
                 auto artists{ Listen::getRecentArtists(session, params) };
                 EXPECT_EQ(artists.results.size(), 0);
@@ -1023,7 +1023,7 @@ namespace lms::db::tests
             Listen::ArtistStatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setClusters({ cluster.getId() });
+            params.filters.setClusters(std::initializer_list<ClusterId>{ cluster.getId() });
 
             auto artists{ Listen::getRecentArtists(session, params) };
             ASSERT_EQ(artists.results.size(), 0);
@@ -1038,7 +1038,7 @@ namespace lms::db::tests
             Listen::ArtistStatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setClusters({ cluster.getId() });
+            params.filters.setClusters(std::initializer_list<ClusterId>{ cluster.getId() });
 
             auto artists{ Listen::getRecentArtists(session, params) };
             ASSERT_EQ(artists.results.size(), 1);
@@ -1051,8 +1051,8 @@ namespace lms::db::tests
         ScopedTrack track{ session };
         ScopedUser user{ session, "MyUser" };
         ScopedArtist artist{ session, "MyArtist" };
-        ScopedMediaLibrary library{ session };
-        ScopedMediaLibrary otherLibrary{ session };
+        ScopedMediaLibrary library{ session, "MyLibrary", "/root" };
+        ScopedMediaLibrary otherLibrary{ session, "OtherLibrary", "/otherRoot" };
 
         {
             auto transaction{ session.createWriteTransaction() };
@@ -1067,7 +1067,7 @@ namespace lms::db::tests
             auto transaction{ session.createReadTransaction() };
 
             Listen::ArtistStatsFindParameters params;
-            params.setMediaLibrary(library.getId());
+            params.filters.setMediaLibrary(library.getId());
 
             auto artists{ Listen::getRecentArtists(session, params) };
             ASSERT_EQ(artists.results.size(), 1);
@@ -1077,7 +1077,7 @@ namespace lms::db::tests
             auto transaction{ session.createReadTransaction() };
 
             Listen::ArtistStatsFindParameters params;
-            params.setMediaLibrary(otherLibrary.getId());
+            params.filters.setMediaLibrary(otherLibrary.getId());
 
             auto artists{ Listen::getRecentArtists(session, params) };
             EXPECT_EQ(artists.results.size(), 0);
@@ -1281,7 +1281,7 @@ namespace lms::db::tests
             Listen::StatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setClusters({ cluster.getId() });
+            params.filters.setClusters(std::initializer_list<ClusterId>{ cluster.getId() });
 
             auto releases{ Listen::getRecentReleases(session, params) };
             EXPECT_EQ(releases.results.size(), 0);
@@ -1296,7 +1296,7 @@ namespace lms::db::tests
             Listen::StatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setClusters({ cluster.getId() });
+            params.filters.setClusters(std::initializer_list<ClusterId>{ cluster.getId() });
 
             auto releases{ Listen::getRecentReleases(session, params) };
             EXPECT_EQ(releases.results.size(), 0);
@@ -1312,7 +1312,7 @@ namespace lms::db::tests
             Listen::StatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setClusters({ cluster.getId() });
+            params.filters.setClusters(std::initializer_list<ClusterId>{ cluster.getId() });
 
             auto releases{ Listen::getRecentReleases(session, params) };
             EXPECT_EQ(releases.results.size(), 1);
@@ -1325,8 +1325,8 @@ namespace lms::db::tests
         ScopedTrack track{ session };
         ScopedUser user{ session, "MyUser" };
         ScopedRelease release{ session, "MyRelease" };
-        ScopedMediaLibrary library{ session };
-        ScopedMediaLibrary otherLibrary{ session };
+        ScopedMediaLibrary library{ session, "MyLibrary", "/root" };
+        ScopedMediaLibrary otherLibrary{ session, "OtherLibrary", "/otherRoot" };
 
         {
             auto transaction{ session.createWriteTransaction() };
@@ -1341,7 +1341,7 @@ namespace lms::db::tests
             auto transaction{ session.createReadTransaction() };
 
             Listen::StatsFindParameters params;
-            params.setMediaLibrary(library.getId());
+            params.filters.setMediaLibrary(library.getId());
 
             auto releases{ Listen::getRecentReleases(session, params) };
             EXPECT_EQ(releases.moreResults, false);
@@ -1352,7 +1352,7 @@ namespace lms::db::tests
             auto transaction{ session.createReadTransaction() };
 
             Listen::StatsFindParameters params;
-            params.setMediaLibrary(otherLibrary.getId());
+            params.filters.setMediaLibrary(otherLibrary.getId());
 
             auto releases{ Listen::getRecentReleases(session, params) };
             EXPECT_EQ(releases.moreResults, false);
@@ -1410,8 +1410,8 @@ namespace lms::db::tests
     {
         ScopedTrack track{ session };
         ScopedUser user{ session, "MyUser" };
-        ScopedMediaLibrary library{ session };
-        ScopedMediaLibrary otherLibrary{ session };
+        ScopedMediaLibrary library{ session, "MyLibrary", "/root" };
+        ScopedMediaLibrary otherLibrary{ session, "OtherLibrary", "/otherRoot" };
 
         const Wt::WDateTime dateTime{ Wt::WDate{ 2000, 1, 2 }, Wt::WTime{ 12, 0, 1 } };
         ScopedListen listen1{ session, user.lockAndGet(), track.lockAndGet(), ScrobblingBackend::Internal, dateTime };
@@ -1425,7 +1425,7 @@ namespace lms::db::tests
             auto transaction{ session.createReadTransaction() };
 
             Listen::StatsFindParameters params;
-            params.setMediaLibrary(library.getId());
+            params.filters.setMediaLibrary(library.getId());
 
             auto tracks{ Listen::getRecentTracks(session, params) };
             EXPECT_EQ(tracks.moreResults, false);
@@ -1437,7 +1437,7 @@ namespace lms::db::tests
             auto transaction{ session.createReadTransaction() };
 
             Listen::StatsFindParameters params;
-            params.setMediaLibrary(otherLibrary.getId());
+            params.filters.setMediaLibrary(otherLibrary.getId());
 
             auto tracks{ Listen::getRecentTracks(session, params) };
             EXPECT_EQ(tracks.moreResults, false);
@@ -1655,7 +1655,7 @@ namespace lms::db::tests
             Listen::StatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setClusters({ cluster.getId() });
+            params.filters.setClusters(std::initializer_list<ClusterId>{ cluster.getId() });
 
             auto tracks{ Listen::getRecentTracks(session, params) };
             EXPECT_EQ(tracks.results.size(), 0);
@@ -1671,7 +1671,7 @@ namespace lms::db::tests
             Listen::StatsFindParameters params;
             params.setUser(user->getId());
             params.setScrobblingBackend(ScrobblingBackend::Internal);
-            params.setClusters({ cluster.getId() });
+            params.filters.setClusters(std::initializer_list<ClusterId>{ cluster.getId() });
 
             auto tracks{ Listen::getRecentTracks(session, params) };
             EXPECT_EQ(tracks.results.size(), 1);

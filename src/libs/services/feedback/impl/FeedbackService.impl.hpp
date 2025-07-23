@@ -19,9 +19,9 @@
 
 #pragma once
 
-#include "database/Db.hpp"
+#include "database/IDb.hpp"
 #include "database/Session.hpp"
-#include "database/User.hpp"
+#include "database/objects/User.hpp"
 
 namespace lms::feedback
 {
@@ -123,6 +123,7 @@ namespace lms::feedback
             }
 
             ratedObject.modify()->setRating(*rating);
+            ratedObject.modify()->setLastUpdated(Wt::WDateTime::currentDateTime());
         }
         else
         {

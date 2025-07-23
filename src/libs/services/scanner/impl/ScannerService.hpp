@@ -20,42 +20,51 @@
 #pragma once
 
 #include <chrono>
+#include <memory>
 #include <optional>
 #include <shared_mutex>
 #include <vector>
 
+#include <boost/asio/system_timer.hpp>
+
 #include <Wt/WDateTime.h>
 #include <Wt/WIOService.h>
 #include <Wt/WSignal.h>
-#include <boost/asio/system_timer.hpp>
 
-#include "IScanStep.hpp"
+#include "FileScanners.hpp"
 #include "ScannerSettings.hpp"
-#include "core/Path.hpp"
-#include "database/Db.hpp"
+#include "database/IDb.hpp"
 #include "database/Session.hpp"
-#include "database/Types.hpp"
 #include "services/scanner/IScannerService.hpp"
+#include "steps/IScanStep.hpp"
+
+namespace lms::core
+{
+    class IJobScheduler;
+}
 
 namespace lms::scanner
 {
+    class IFileScanner;
+
+    // Main goals to keepthe scanner fast:
+    // - single pass on files: only 1 filesystem exploration must be done (no further reads triggered by parsed values)
+    // - stable: 1 single scan (full or not) is enough: successive scans must have no effect if there is no change in the files
     class ScannerService : public IScannerService
     {
     public:
-        ScannerService(db::Db& db);
-        ~ScannerService();
-
-    private:
+        ScannerService(db::IDb& db);
+        ~ScannerService() override;
         ScannerService(const ScannerService&) = delete;
         ScannerService& operator=(const ScannerService&) = delete;
 
+    private:
         void requestReload() override;
         void requestImmediateScan(const ScanOptions& scanOptions) override;
 
         Status getStatus() const override;
         Events& getEvents() override { return _events; }
 
-    private:
         void start();
         void stop();
 
@@ -67,16 +76,21 @@ namespace lms::scanner
 
         // Update database (scheduled callback)
         void scan(const ScanOptions& scanOptions);
+        void processScanSteps(ScanContext& context);
 
         void scanMediaDirectory(const std::filesystem::path& mediaDirectory, bool forceScan, ScanStats& stats);
 
         // Helpers
         void refreshScanSettings();
-        ScannerSettings readSettings();
+        void refreshTracingLoggerStats();
 
         void notifyInProgressIfNeeded(const ScanStepStats& stats);
         void notifyInProgress(const ScanStepStats& stats);
 
+        db::IDb& _db;
+        std::unique_ptr<core::IJobScheduler> _jobScheduler;
+
+        FileScanners _fileScanners;
         std::vector<std::unique_ptr<IScanStep>> _scanSteps;
 
         std::mutex _controlMutex;
@@ -84,8 +98,7 @@ namespace lms::scanner
         Wt::WIOService _ioService;
         boost::asio::system_timer _scheduleTimer{ _ioService };
         Events _events;
-        std::chrono::system_clock::time_point _lastScanInProgressEmit{};
-        db::Db& _db;
+        std::chrono::steady_clock::time_point _lastScanInProgressEmit;
 
         mutable std::shared_mutex _statusMutex;
         State _curState{ State::NotScheduled };
@@ -94,5 +107,6 @@ namespace lms::scanner
         Wt::WDateTime _nextScheduledScan;
 
         ScannerSettings _settings;
+        std::optional<ScannerSettings> _lastScanSettings;
     };
 } // namespace lms::scanner

@@ -8,11 +8,17 @@ if (BUILD_BENCHMARKS)
 	add_subdirectory(bench)
 endif()
 
-add_library(lmsmetadata SHARED
-	impl/AvFormatTagReader.cpp
+add_library(lmsmetadata STATIC
+	impl/ArtistInfo.cpp
+	impl/AudioFileParser.cpp
+	impl/avformat/AvFormatImageReader.cpp
+	impl/avformat/AvFormatTagReader.cpp
+	impl/avformat/Utils.cpp
 	impl/Lyrics.cpp
-	impl/Parser.cpp
-	impl/TagLibTagReader.cpp
+	impl/PlayList.cpp
+	impl/taglib/TagLibImageReader.cpp
+	impl/taglib/TagLibTagReader.cpp
+	impl/taglib/Utils.cpp
 	impl/Utils.cpp
 	)
 
@@ -22,6 +28,7 @@ target_include_directories(lmsmetadata INTERFACE
 
 target_include_directories(lmsmetadata PRIVATE
 	include
+	impl
 	)
 
 target_link_libraries(lmsmetadata PRIVATE
@@ -33,6 +40,3 @@ target_link_libraries(lmsmetadata PUBLIC
 	lmscore
 	std::filesystem
 	)
-
-install(TARGETS lmsmetadata DESTINATION ${CMAKE_INSTALL_LIBDIR})
-

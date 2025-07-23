@@ -20,18 +20,26 @@
 #include "Common.hpp"
 
 #include "core/String.hpp"
-#include "database/Db.hpp"
-#include "database/Directory.hpp"
-#include "database/Image.hpp"
-#include "database/RatedArtist.hpp"
-#include "database/RatedRelease.hpp"
-#include "database/RatedTrack.hpp"
-#include "database/StarredArtist.hpp"
-#include "database/StarredRelease.hpp"
-#include "database/StarredTrack.hpp"
-#include "database/TrackLyrics.hpp"
-#include "database/UIState.hpp"
-#include "database/User.hpp"
+#include "database/objects/Artist.hpp"
+#include "database/objects/ArtistInfo.hpp"
+#include "database/objects/AuthToken.hpp"
+#include "database/objects/Directory.hpp"
+#include "database/objects/Image.hpp"
+#include "database/objects/PlayListFile.hpp"
+#include "database/objects/PlayQueue.hpp"
+#include "database/objects/RatedArtist.hpp"
+#include "database/objects/RatedRelease.hpp"
+#include "database/objects/RatedTrack.hpp"
+#include "database/objects/ScanSettings.hpp"
+#include "database/objects/StarredArtist.hpp"
+#include "database/objects/StarredRelease.hpp"
+#include "database/objects/StarredTrack.hpp"
+#include "database/objects/TrackArtistLink.hpp"
+#include "database/objects/TrackEmbeddedImage.hpp"
+#include "database/objects/TrackEmbeddedImageLink.hpp"
+#include "database/objects/TrackLyrics.hpp"
+#include "database/objects/UIState.hpp"
+#include "database/objects/User.hpp"
 
 namespace lms::db::tests
 {
@@ -336,21 +344,30 @@ VALUES
             auto transaction{ session.createReadTransaction() };
 
             EXPECT_FALSE(Artist::find(session, ArtistId{}));
+            EXPECT_FALSE(ArtistInfo::find(session, ArtistInfoId{}));
+            EXPECT_FALSE(AuthToken::find(session, AuthTokenId{}));
+            EXPECT_FALSE(Country::find(session, CountryId{}));
             EXPECT_FALSE(Cluster::find(session, ClusterId{}));
             EXPECT_FALSE(ClusterType::find(session, ClusterTypeId{}));
             EXPECT_FALSE(Directory::find(session, DirectoryId{}));
+            EXPECT_FALSE(TrackEmbeddedImage::find(session, TrackEmbeddedImageId{}));
+            EXPECT_FALSE(TrackEmbeddedImageLink::find(session, TrackEmbeddedImageLinkId{}));
             EXPECT_FALSE(Image::find(session, ImageId{}));
             EXPECT_FALSE(Label::find(session, LabelId{}));
             EXPECT_FALSE(Listen::find(session, ListenId{}));
+            EXPECT_FALSE(PlayListFile::find(session, PlayListFileId{}));
+            EXPECT_FALSE(PlayQueue::find(session, PlayQueueId{}));
             EXPECT_FALSE(RatedArtist::find(session, RatedArtistId{}));
             EXPECT_FALSE(RatedRelease::find(session, RatedReleaseId{}));
             EXPECT_FALSE(RatedTrack::find(session, RatedTrackId{}));
             EXPECT_FALSE(Release::find(session, ReleaseId{}));
             EXPECT_FALSE(ReleaseType::find(session, ReleaseTypeId{}));
+            EXPECT_FALSE(ScanSettings::find(session, ScanSettingsId{}));
             EXPECT_FALSE(StarredArtist::find(session, StarredArtistId{}));
             EXPECT_FALSE(StarredRelease::find(session, StarredReleaseId{}));
             EXPECT_FALSE(StarredTrack::find(session, StarredTrackId{}));
             EXPECT_FALSE(Track::find(session, TrackId{}));
+            EXPECT_FALSE(TrackArtistLink::find(session, TrackArtistLinkId{}));
             EXPECT_FALSE(TrackList::find(session, TrackListId{}));
             EXPECT_FALSE(TrackLyrics::find(session, TrackLyricsId{}));
             EXPECT_FALSE(UIState::find(session, UIStateId{}));

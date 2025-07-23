@@ -28,7 +28,7 @@
 
 namespace lms::db
 {
-    class Db;
+    class IDb;
 }
 
 namespace lms::feedback
@@ -36,13 +36,12 @@ namespace lms::feedback
     class FeedbackService : public IFeedbackService
     {
     public:
-        FeedbackService(boost::asio::io_context& ioContext, db::Db& db);
-        ~FeedbackService();
-
-    private:
+        FeedbackService(boost::asio::io_context& ioContext, db::IDb& db);
+        ~FeedbackService() override;
         FeedbackService(const FeedbackService&) = delete;
         FeedbackService& operator=(const FeedbackService&) = delete;
 
+    private:
         void star(db::UserId userId, db::ArtistId artistId) override;
         void unstar(db::UserId userId, db::ArtistId artistId) override;
         bool isStarred(db::UserId userId, db::ArtistId artistId) override;
@@ -54,8 +53,8 @@ namespace lms::feedback
 
         void star(db::UserId userId, db::ReleaseId releaseId) override;
         void unstar(db::UserId userId, db::ReleaseId releaseId) override;
-        bool isStarred(db::UserId userId, db::ReleaseId releasedId) override;
-        Wt::WDateTime getStarredDateTime(db::UserId userId, db::ReleaseId releasedId) override;
+        bool isStarred(db::UserId userId, db::ReleaseId releaseId) override;
+        Wt::WDateTime getStarredDateTime(db::UserId userId, db::ReleaseId releaseId) override;
         ReleaseContainer findStarredReleases(const FindParameters& params) override;
 
         void setRating(db::UserId userId, db::ReleaseId releaseId, std::optional<db::Rating> rating) override;
@@ -70,7 +69,6 @@ namespace lms::feedback
         void setRating(db::UserId userId, db::TrackId trackId, std::optional<db::Rating> rating) override;
         std::optional<db::Rating> getRating(db::UserId userId, db::TrackId trackId) override;
 
-    private:
         std::optional<db::FeedbackBackend> getUserFeedbackBackend(db::UserId userId);
 
         template<typename ObjType, typename ObjIdType, typename StarredObjType>
@@ -88,7 +86,7 @@ namespace lms::feedback
         template<typename ObjType, typename ObjIdType, typename RatedObjType>
         std::optional<db::Rating> getRating(db::UserId userId, ObjIdType objectId);
 
-        db::Db& _db;
+        db::IDb& _db;
         std::unordered_map<db::FeedbackBackend, std::unique_ptr<IFeedbackBackend>> _backends;
     };
 

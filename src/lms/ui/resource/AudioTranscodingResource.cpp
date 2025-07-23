@@ -23,18 +23,18 @@
 
 #include <Wt/Http/Response.h>
 
-#include "av/TranscodingParameters.hpp"
-#include "av/TranscodingResourceHandlerCreator.hpp"
-#include "av/Types.hpp"
 #include "core/ILogger.hpp"
+#include "core/IResourceHandler.hpp"
+#include "core/Service.hpp"
 #include "core/String.hpp"
 #include "database/Session.hpp"
-#include "database/Track.hpp"
-#include "database/User.hpp"
+#include "database/objects/Track.hpp"
+#include "database/objects/User.hpp"
+#include "services/transcoding/ITranscodingService.hpp"
 
 #include "LmsApplication.hpp"
 
-#define LOG(severity, message) LMS_LOG(UI, severity, "Audio transcode resource: " << message)
+#define TRANSCODE_LOG(severity, message) LMS_LOG(UI, severity, "Audio transcode resource: " << message)
 
 namespace lms::core::stringUtils
 {
@@ -62,7 +62,7 @@ namespace lms::core::stringUtils
             return format;
         }
 
-        LOG(ERROR, "Cannot determine audio format from value '" << str << "'");
+        TRANSCODE_LOG(ERROR, "Cannot determine audio format from value '" << str << "'");
 
         return std::nullopt;
     }
@@ -72,23 +72,23 @@ namespace lms::ui
 {
     namespace
     {
-        std::optional<av::transcoding::OutputFormat> AudioFormatToAvFormat(db::TranscodingOutputFormat format)
+        std::optional<transcoding::OutputFormat> AudioFormatToAvFormat(db::TranscodingOutputFormat format)
         {
             switch (format)
             {
             case db::TranscodingOutputFormat::MP3:
-                return av::transcoding::OutputFormat::MP3;
+                return transcoding::OutputFormat::MP3;
             case db::TranscodingOutputFormat::OGG_OPUS:
-                return av::transcoding::OutputFormat::OGG_OPUS;
+                return transcoding::OutputFormat::OGG_OPUS;
             case db::TranscodingOutputFormat::MATROSKA_OPUS:
-                return av::transcoding::OutputFormat::MATROSKA_OPUS;
+                return transcoding::OutputFormat::MATROSKA_OPUS;
             case db::TranscodingOutputFormat::OGG_VORBIS:
-                return av::transcoding::OutputFormat::OGG_VORBIS;
+                return transcoding::OutputFormat::OGG_VORBIS;
             case db::TranscodingOutputFormat::WEBM_VORBIS:
-                return av::transcoding::OutputFormat::WEBM_VORBIS;
+                return transcoding::OutputFormat::WEBM_VORBIS;
             }
 
-            LOG(ERROR, "Cannot convert from audio format to AV format");
+            TRANSCODE_LOG(ERROR, "Cannot convert from audio format to AV format");
 
             return std::nullopt;
         }
@@ -99,21 +99,21 @@ namespace lms::ui
             auto paramStr{ request.getParameter(parameterName) };
             if (!paramStr)
             {
-                LOG(DEBUG, "Missing parameter '" << parameterName << "'");
+                TRANSCODE_LOG(DEBUG, "Missing parameter '" << parameterName << "'");
                 return std::nullopt;
             }
 
             auto res{ core::stringUtils::readAs<T>(*paramStr) };
             if (!res)
-                LOG(ERROR, "Cannot parse parameter '" << parameterName << "' from value '" << *paramStr << "'");
+                TRANSCODE_LOG(ERROR, "Cannot parse parameter '" << parameterName << "' from value '" << *paramStr << "'");
 
             return res;
         }
 
         struct TranscodingParameters
         {
-            av::transcoding::InputParameters inputParameters;
-            av::transcoding::OutputParameters outputParameters;
+            transcoding::InputParameters inputParameters;
+            transcoding::OutputParameters outputParameters;
         };
 
         std::optional<TranscodingParameters> readTranscodingParameters(const Wt::Http::Request& request)
@@ -130,36 +130,22 @@ namespace lms::ui
 
             if (!db::isAudioBitrateAllowed(*bitrate))
             {
-                LOG(ERROR, "Bitrate '" << *bitrate << "' is not allowed");
+                TRANSCODE_LOG(ERROR, "Bitrate '" << *bitrate << "' is not allowed");
                 return std::nullopt;
             }
 
-            const std::optional<av::transcoding::OutputFormat> avFormat{ AudioFormatToAvFormat(*format) };
+            const std::optional<transcoding::OutputFormat> avFormat{ AudioFormatToAvFormat(*format) };
             if (!avFormat)
                 return std::nullopt;
 
             // optional parameter
             std::size_t offset{ readParameterAs<std::size_t>(request, "offset").value_or(0) };
 
-            std::filesystem::path trackPath;
-            {
-                auto transaction{ LmsApp->getDbSession().createReadTransaction() };
-
-                const db::Track::pointer track{ db::Track::find(LmsApp->getDbSession(), *trackId) };
-                if (!track)
-                {
-                    LOG(ERROR, "Missing track");
-                    return std::nullopt;
-                }
-
-                parameters.inputParameters.trackPath = track->getAbsoluteFilePath();
-                parameters.inputParameters.duration = track->getDuration();
-            }
-
+            parameters.inputParameters.trackId = *trackId;
+            parameters.inputParameters.offset = std::chrono::seconds{ offset };
             parameters.outputParameters.stripMetadata = true;
             parameters.outputParameters.format = *avFormat;
             parameters.outputParameters.bitrate = *bitrate;
-            parameters.outputParameters.offset = std::chrono::seconds{ offset };
 
             return parameters;
         }
@@ -177,31 +163,24 @@ namespace lms::ui
 
     void AudioTranscodingResource::handleRequest(const Wt::Http::Request& request, Wt::Http::Response& response)
     {
-        std::shared_ptr<IResourceHandler> resourceHandler;
+        std::shared_ptr<core::IResourceHandler> resourceHandler;
 
-        try
+        Wt::Http::ResponseContinuation* continuation{ request.continuation() };
+        if (!continuation)
         {
-            Wt::Http::ResponseContinuation* continuation{ request.continuation() };
-            if (!continuation)
-            {
-                if (const auto& parameters{ readTranscodingParameters(request) })
-                    resourceHandler = av::transcoding::createResourceHandler(parameters->inputParameters, parameters->outputParameters, false /* estimate content length */);
-            }
-            else
-            {
-                resourceHandler = Wt::cpp17::any_cast<std::shared_ptr<IResourceHandler>>(continuation->data());
-            }
-
-            if (resourceHandler)
-            {
-                continuation = resourceHandler->processRequest(request, response);
-                if (continuation)
-                    continuation->setData(resourceHandler);
-            }
+            if (const auto& parameters{ readTranscodingParameters(request) })
+                resourceHandler = core::Service<transcoding::ITranscodingService>::get()->createResourceHandler(parameters->inputParameters, parameters->outputParameters, false /* estimate content length */);
         }
-        catch (const av::Exception& e)
+        else
         {
-            LOG(ERROR, "Caught Av exception: " << e.what());
+            resourceHandler = Wt::cpp17::any_cast<std::shared_ptr<core::IResourceHandler>>(continuation->data());
+        }
+
+        if (resourceHandler)
+        {
+            continuation = resourceHandler->processRequest(request, response);
+            if (continuation)
+                continuation->setData(resourceHandler);
         }
     }
 

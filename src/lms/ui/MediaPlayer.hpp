@@ -27,8 +27,8 @@
 #include <Wt/WTemplate.h>
 #include <Wt/WText.h>
 
-#include "database/TrackId.hpp"
 #include "database/Types.hpp"
+#include "database/objects/TrackId.hpp"
 
 namespace lms::ui
 {
@@ -89,7 +89,7 @@ namespace lms::ui
         };
 
         MediaPlayer();
-        ~MediaPlayer() = default;
+        ~MediaPlayer() override;
         MediaPlayer(const MediaPlayer&) = delete;
         MediaPlayer& operator=(const MediaPlayer&) = delete;
 

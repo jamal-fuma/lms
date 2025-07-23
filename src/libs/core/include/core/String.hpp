@@ -20,7 +20,6 @@
 #pragma once
 
 #include <chrono>
-#include <initializer_list>
 #include <optional>
 #include <span>
 #include <sstream>
@@ -62,6 +61,7 @@ namespace lms::core::stringUtils
     [[nodiscard]] std::string bufferToString(std::span<const unsigned char> data);
 
     [[nodiscard]] bool stringCaseInsensitiveEqual(std::string_view strA, std::string_view strB);
+    [[nodiscard]] std::string_view::size_type stringCaseInsensitiveContains(std::string_view str, std::string_view strtoFind);
 
     void capitalize(std::string& str);
 
@@ -114,6 +114,8 @@ namespace lms::core::stringUtils
 
     [[nodiscard]] std::string toISO8601String(const Wt::WDateTime& dateTime);
     [[nodiscard]] std::string toISO8601String(const Wt::WDate& date);
+
+    [[nodiscard]] Wt::WDateTime fromISO8601String(std::string_view dateTime);
 
     // to "[minutes:seconds.milliseconds]"
     std::string formatTimestamp(std::chrono::milliseconds timestamp);

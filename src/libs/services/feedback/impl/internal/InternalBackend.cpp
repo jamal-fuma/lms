@@ -19,11 +19,11 @@
 
 #include "InternalBackend.hpp"
 
-#include "database/Db.hpp"
+#include "database/IDb.hpp"
 #include "database/Session.hpp"
-#include "database/StarredArtist.hpp"
-#include "database/StarredRelease.hpp"
-#include "database/StarredTrack.hpp"
+#include "database/objects/StarredArtist.hpp"
+#include "database/objects/StarredRelease.hpp"
+#include "database/objects/StarredTrack.hpp"
 
 namespace lms::feedback
 {
@@ -48,38 +48,38 @@ namespace lms::feedback
         }
     } // namespace details
 
-    InternalBackend::InternalBackend(db::Db& db)
+    InternalBackend::InternalBackend(db::IDb& db)
         : _db{ db }
     {
     }
 
-    void InternalBackend::onStarred(db::StarredArtistId starredArtistId)
+    void InternalBackend::onStarred(db::StarredArtistId artistId)
     {
-        details::onStarred<db::StarredArtist>(_db.getTLSSession(), starredArtistId);
+        details::onStarred<db::StarredArtist>(_db.getTLSSession(), artistId);
     }
 
-    void InternalBackend::onUnstarred(db::StarredArtistId starredArtistId)
+    void InternalBackend::onUnstarred(db::StarredArtistId artistId)
     {
-        details::onUnstarred<db::StarredArtist>(_db.getTLSSession(), starredArtistId);
+        details::onUnstarred<db::StarredArtist>(_db.getTLSSession(), artistId);
     }
 
-    void InternalBackend::onStarred(db::StarredReleaseId starredReleaseId)
+    void InternalBackend::onStarred(db::StarredReleaseId releaseId)
     {
-        details::onStarred<db::StarredRelease>(_db.getTLSSession(), starredReleaseId);
+        details::onStarred<db::StarredRelease>(_db.getTLSSession(), releaseId);
     }
 
-    void InternalBackend::onUnstarred(db::StarredReleaseId starredReleaseId)
+    void InternalBackend::onUnstarred(db::StarredReleaseId releaseId)
     {
-        details::onUnstarred<db::StarredRelease>(_db.getTLSSession(), starredReleaseId);
+        details::onUnstarred<db::StarredRelease>(_db.getTLSSession(), releaseId);
     }
 
-    void InternalBackend::onStarred(db::StarredTrackId starredTrackId)
+    void InternalBackend::onStarred(db::StarredTrackId trackId)
     {
-        details::onStarred<db::StarredTrack>(_db.getTLSSession(), starredTrackId);
+        details::onStarred<db::StarredTrack>(_db.getTLSSession(), trackId);
     }
 
-    void InternalBackend::onUnstarred(db::StarredTrackId starredTrackId)
+    void InternalBackend::onUnstarred(db::StarredTrackId trackId)
     {
-        details::onUnstarred<db::StarredTrack>(_db.getTLSSession(), starredTrackId);
+        details::onUnstarred<db::StarredTrack>(_db.getTLSSession(), trackId);
     }
 } // namespace lms::feedback

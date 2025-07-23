@@ -21,8 +21,8 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cstring> // strerror
 #include <fstream>
+#include <system_error>
 
 #include <archive.h>
 #include <archive_entry.h>
@@ -43,9 +43,13 @@ namespace lms::zip
             : Exception{ "File '" + p.string() + "': " + std::string{ message } }
         {
         }
+    };
 
-        FileException(const std::filesystem::path& p, std::string_view message, int err)
-            : Exception{ "File '" + p.string() + "': " + std::string{ message } + ": " + ::strerror(err) }
+    class FileStdException : public FileException
+    {
+    public:
+        FileStdException(const std::filesystem::path& p, std::string_view message, int err)
+            : FileException{ p, std::string{ message } + "': " + std::error_code{ err, std::generic_category() }.message() }
         {
         }
     };
@@ -75,7 +79,7 @@ namespace lms::zip
     {
         const int res{ ::archive_write_free(arch) };
         if (res != ARCHIVE_OK)
-            LMS_LOG(UTILS, ERROR, "Failure while freeing archive control struct: " << std::string{ ::strerror(res) });
+            LMS_LOG(UTILS, ERROR, "Failure while freeing archive control struct: error code = " << res);
     }
 
     void ArchiveZipper::ArchiveEntryDeleter::operator()(struct ::archive_entry* archEntry)
@@ -217,14 +221,14 @@ namespace lms::zip
             if (!std::filesystem::is_regular_file(entry.filePath))
                 throw FileException{ entry.filePath, "not a regular file" };
 
-            ArchiveEntryPtr archiveEntry{ archive_entry_new() };
+            ArchiveEntryPtr archiveEntry{ ::archive_entry_new() };
             if (!archiveEntry)
                 throw Exception{ "Cannot create archive entry control struct" };
 
-            archive_entry_set_pathname(archiveEntry.get(), entry.fileName.c_str());
-            archive_entry_set_size(archiveEntry.get(), std::filesystem::file_size(entry.filePath));
-            archive_entry_set_mode(archiveEntry.get(), permsToMode(std::filesystem::status(entry.filePath).permissions()));
-            archive_entry_set_filetype(archiveEntry.get(), AE_IFREG);
+            ::archive_entry_set_pathname(archiveEntry.get(), entry.fileName.c_str());
+            ::archive_entry_set_size(archiveEntry.get(), std::filesystem::file_size(entry.filePath));
+            ::archive_entry_set_mode(archiveEntry.get(), permsToMode(std::filesystem::status(entry.filePath).permissions()));
+            ::archive_entry_set_filetype(archiveEntry.get(), AE_IFREG);
 
             return archiveEntry;
         }
@@ -238,9 +242,9 @@ namespace lms::zip
     {
         assert(_currentEntry != std::cend(_entries));
 
-        std::ifstream ifs{ _currentEntry->filePath.c_str(), std::ios_base::binary };
+        std::ifstream ifs{ _currentEntry->filePath, std::ios_base::binary };
         if (!ifs)
-            throw FileException{ _currentEntry->filePath, "cannot open file", errno };
+            throw FileStdException{ _currentEntry->filePath, "cannot open file", errno };
 
         ifs.seekg(0, std::ios::end);
         const std::uint64_t fileSize{ static_cast<std::uint64_t>(ifs.tellg()) };
@@ -254,10 +258,10 @@ namespace lms::zip
 
         // read from file
         if (!ifs.seekg(_currentEntryOffset, std::ios::beg))
-            throw FileException{ _currentEntry->filePath, "seek failed", errno };
+            throw FileStdException{ _currentEntry->filePath, "seek failed", errno };
 
-        if (!ifs.read(reinterpret_cast<char*>(&_readBuffer[0]), bytesToRead))
-            throw FileException{ _currentEntry->filePath, "read failed", errno };
+        if (!ifs.read(reinterpret_cast<char*>(_readBuffer.data()), bytesToRead))
+            throw FileStdException{ _currentEntry->filePath, "read failed", errno };
 
         const std::uint64_t actualBytesRead{ static_cast<std::uint64_t>(ifs.gcount()) };
 
@@ -266,7 +270,7 @@ namespace lms::zip
             std::uint64_t remainingBytesToWrite{ actualBytesRead };
             while (remainingBytesToWrite > 0)
             {
-                const auto writtenBytes{ archive_write_data(_archive.get(), &_readBuffer[actualBytesRead - remainingBytesToWrite], remainingBytesToWrite) };
+                const auto writtenBytes{ ::archive_write_data(_archive.get(), &_readBuffer[actualBytesRead - remainingBytesToWrite], remainingBytesToWrite) };
                 if (writtenBytes < 0)
                     throw ArchiveException{ _archive.get() };
 
@@ -283,7 +287,7 @@ namespace lms::zip
     {
         if (!_currentOutputStream)
         {
-            archive_set_error(_archive.get(), EIO, "IO error: operation cancelled");
+            ::archive_set_error(_archive.get(), EIO, "IO error: operation cancelled");
             return -1;
         }
 

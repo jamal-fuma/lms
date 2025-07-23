@@ -19,10 +19,11 @@
 
 #include "TrackListsView.hpp"
 
+#include <Wt/WLineEdit.h>
 #include <Wt/WPushButton.h>
 
 #include "database/Session.hpp"
-#include "database/TrackList.hpp"
+#include "database/objects/TrackList.hpp"
 
 #include "DropDownMenuSelector.hpp"
 #include "Filters.hpp"
@@ -34,8 +35,6 @@
 
 namespace lms::ui
 {
-    using namespace db;
-
     TrackLists::TrackLists(Filters& filters)
         : Template{ Wt::WString::tr("Lms.Explore.TrackLists.template") }
         , _filters{ filters }
@@ -44,16 +43,38 @@ namespace lms::ui
         addFunction("id", &Wt::WTemplate::Functions::id);
 
         {
-            _mode = state::readValue<Mode>("tracklists_sort_mode").value_or(_defaultMode);
+            _type = state::readValue<Type>("tracklists_type").value_or(_defaultType);
 
-            using SortModeSelector = DropDownMenuSelector<TrackLists::Mode>;
-            SortModeSelector* sortModeSelector{ bindNew<SortModeSelector>("sort-mode", Wt::WString::tr("Lms.Explore.TrackLists.template.sort-mode"), _mode) };
-            sortModeSelector->bindItem("recently-modified", Wt::WString::tr("Lms.Explore.recently-modified"), Mode::RecentlyModified);
-            sortModeSelector->bindItem("all", Wt::WString::tr("Lms.Explore.all"), Mode::All);
+            using TypeSelector = DropDownMenuSelector<Type>;
+            TypeSelector* typeSelector{ bindNew<TypeSelector>("tracklist-type", Wt::WString::tr("Lms.Explore.TrackLists.template.type-selector"), _type) };
+            typeSelector->bindItem("owned", Wt::WString::tr("Lms.Explore.TrackLists.type-owned"), Type::Owned);
+            typeSelector->bindItem("shared", Wt::WString::tr("Lms.Explore.TrackLists.type-shared"), Type::Shared);
 
-            sortModeSelector->itemSelected.connect(this, [this](TrackLists::Mode mode) {
-                state::writeValue<Mode>("tracklists_sort_mode", mode);
-                _mode = mode;
+            typeSelector->itemSelected.connect(this, [this](Type type) {
+                state::writeValue<Type>("tracklists_type", type);
+                _type = type;
+                refreshView();
+            });
+        }
+
+        Wt::WLineEdit* searchEdit{ bindNew<Wt::WLineEdit>("search") };
+        searchEdit->setPlaceholderText(Wt::WString::tr("Lms.Explore.Search.search-placeholder"));
+        searchEdit->textInput().connect([this, searchEdit] {
+            _searchText = searchEdit->text().toUTF8();
+            refreshView();
+        });
+
+        {
+            _sortMode = state::readValue<SortMode>("tracklists_sort_mode").value_or(_defaultSortMode);
+
+            using SortModeSelector = DropDownMenuSelector<SortMode>;
+            SortModeSelector* sortModeSelector{ bindNew<SortModeSelector>("sort-mode", Wt::WString::tr("Lms.Explore.TrackLists.template.sort-mode"), _sortMode) };
+            sortModeSelector->bindItem("recently-modified", Wt::WString::tr("Lms.Explore.recently-modified"), SortMode::RecentlyModified);
+            sortModeSelector->bindItem("all", Wt::WString::tr("Lms.Explore.all"), SortMode::All);
+
+            sortModeSelector->itemSelected.connect(this, [this](SortMode mode) {
+                state::writeValue<SortMode>("tracklists_sort_mode", mode);
+                _sortMode = mode;
                 refreshView();
             });
         }
@@ -88,40 +109,54 @@ namespace lms::ui
 
     void TrackLists::addSome()
     {
-        const Range range{ static_cast<std::size_t>(_container->getCount()), _batchSize };
+        const db::Range range{ static_cast<std::size_t>(_container->getCount()), _batchSize };
 
-        Session& session{ LmsApp->getDbSession() };
+        db::Session& session{ LmsApp->getDbSession() };
         auto transaction{ session.createReadTransaction() };
 
-        TrackList::FindParameters params;
-        params.setClusters(_filters.getClusters());
-        params.setMediaLibrary(_filters.getMediaLibrary());
-        params.setUser(LmsApp->getUserId());
-        params.setType(TrackListType::Playlist);
+        db::TrackList::FindParameters params;
+
+        if (!_searchText.empty())
+            params.setKeywords(core::stringUtils::splitString(_searchText, ' '));
+        params.setFilters(_filters.getDbFilters());
+        params.setType(db::TrackListType::PlayList);
         params.setRange(range);
-        switch (_mode)
+
+        switch (_type)
         {
-        case Mode::All:
-            params.setSortMethod(TrackListSortMethod::Name);
+        case Type::Owned:
+            params.setUser(LmsApp->getUserId());
             break;
-        case Mode::RecentlyModified:
-            params.setSortMethod(TrackListSortMethod::LastModifiedDesc);
+
+        case Type::Shared:
+            params.setExcludedUser(LmsApp->getUserId());
+            params.setVisibility(db::TrackList::Visibility::Public);
             break;
         }
 
-        const auto trackListIds{ TrackList::find(session, params) };
-        for (const TrackListId trackListId : trackListIds.results)
+        switch (_sortMode)
         {
-            if (const TrackList::pointer trackList{ TrackList::find(LmsApp->getDbSession(), trackListId) })
+        case SortMode::All:
+            params.setSortMethod(db::TrackListSortMethod::Name);
+            break;
+        case SortMode::RecentlyModified:
+            params.setSortMethod(db::TrackListSortMethod::LastModifiedDesc);
+            break;
+        }
+
+        const auto trackListIds{ db::TrackList::find(session, params) };
+        for (const db::TrackListId trackListId : trackListIds.results)
+        {
+            if (const db::TrackList::pointer trackList{ db::TrackList::find(LmsApp->getDbSession(), trackListId) })
                 addTracklist(trackList);
         }
 
         _container->setHasMore(trackListIds.moreResults);
     }
 
-    void TrackLists::addTracklist(const ObjectPtr<TrackList>& trackList)
+    void TrackLists::addTracklist(const db::ObjectPtr<db::TrackList>& trackList)
     {
-        const TrackListId trackListId{ trackList->getId() };
+        const db::TrackListId trackListId{ trackList->getId() };
 
         WTemplate* entry{ _container->addNew<Template>(Wt::WString::tr("Lms.Explore.TrackLists.template.entry")) };
         entry->bindWidget("name", utils::createTrackListAnchor(trackList));

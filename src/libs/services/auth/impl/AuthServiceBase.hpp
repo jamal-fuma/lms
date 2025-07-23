@@ -21,11 +21,11 @@
 
 #include <string_view>
 
-#include "database/UserId.hpp"
+#include "database/objects/UserId.hpp"
 
 namespace lms::db
 {
-    class Db;
+    class IDb;
     class Session;
 } // namespace lms::db
 
@@ -34,7 +34,10 @@ namespace lms::auth
     class AuthServiceBase
     {
     protected:
-        AuthServiceBase(db::Db& db);
+        AuthServiceBase(db::IDb& db);
+        ~AuthServiceBase() = default;
+        AuthServiceBase(const AuthServiceBase&) = delete;
+        AuthServiceBase& operator=(const AuthServiceBase&) = delete;
 
         db::UserId getOrCreateUser(std::string_view loginName);
         void onUserAuthenticated(db::UserId userId);
@@ -42,6 +45,6 @@ namespace lms::auth
         db::Session& getDbSession();
 
     private:
-        db::Db& _db;
+        db::IDb& _db;
     };
 } // namespace lms::auth

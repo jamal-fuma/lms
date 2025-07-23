@@ -22,16 +22,18 @@
 #include "core/ITraceLogger.hpp"
 #include "core/Service.hpp"
 #include "core/String.hpp"
-#include "database/Artist.hpp"
-#include "database/Cluster.hpp"
-#include "database/Directory.hpp"
-#include "database/Image.hpp"
-#include "database/Release.hpp"
-#include "database/Track.hpp"
-#include "database/User.hpp"
+#include "database/Types.hpp"
+#include "database/objects/Artist.hpp"
+#include "database/objects/Artwork.hpp"
+#include "database/objects/Cluster.hpp"
+#include "database/objects/Directory.hpp"
+#include "database/objects/Release.hpp"
+#include "database/objects/Track.hpp"
+#include "database/objects/User.hpp"
 #include "services/feedback/IFeedbackService.hpp"
 #include "services/scrobbling/IScrobblingService.hpp"
 
+#include "CoverArtId.hpp"
 #include "RequestContext.hpp"
 #include "SubsonicId.hpp"
 #include "responses/Artist.hpp"
@@ -83,23 +85,17 @@ namespace lms::api::subsonic
             albumNode.setAttribute("isDir", true);
         }
 
-        albumNode.setAttribute("created", core::stringUtils::toISO8601String(release->getLastWritten()));
-        if (release->getImage())
-        {
-            albumNode.setAttribute("coverArt", idToString(release->getId()));
-        }
-        else
-        {
-            db::Track::FindParameters params;
-            params.setRelease(release->getId());
-            params.setHasEmbeddedImage(true);
-            params.setRange(db::Range{ 0, 1 });
+        albumNode.setAttribute("created", core::stringUtils::toISO8601String(release->getAddedTime()));
 
-            db::Track::find(context.dbSession, params, [&](const db::Track::pointer& track) {
-                albumNode.setAttribute("coverArt", idToString(track->getId()));
-            });
+        if (const auto artwork{ release->getPreferredArtwork() })
+        {
+            CoverArtId coverArtId{ artwork->getId(), artwork->getLastWrittenTime().toTime_t() };
+            albumNode.setAttribute("coverArt", idToString(coverArtId));
         }
-        if (const auto year{ release->getYear() })
+
+        if (const auto originalYear{ release->getOriginalYear() })
+            albumNode.setAttribute("year", *originalYear);
+        else if (const auto year{ release->getYear() })
             albumNode.setAttribute("year", *year);
 
         auto artists{ release->getReleaseArtists() };
@@ -125,9 +121,9 @@ namespace lms::api::subsonic
         const ClusterType::pointer genreClusterType{ ClusterType::find(context.dbSession, "GENRE") };
         if (genreClusterType)
         {
-            auto clusters{ release->getClusterGroups({ genreClusterType->getId() }, 1) };
-            if (!clusters.empty() && !clusters.front().empty())
-                albumNode.setAttribute("genre", clusters.front().front()->getName());
+            const auto clusters{ release->getClusters(genreClusterType->getId(), 1) };
+            if (!clusters.empty())
+                albumNode.setAttribute("genre", clusters.front()->getName());
         }
 
         if (const Wt::WDateTime dateTime{ core::Service<feedback::IFeedbackService>::get()->getStarredDateTime(context.user->getId(), release->getId()) }; dateTime.isValid())
@@ -141,6 +137,7 @@ namespace lms::api::subsonic
             return albumNode;
 
         // OpenSubsonic specific fields (must always be set)
+        albumNode.setAttribute("version", release->getComment());
         albumNode.setAttribute("sortName", release->getSortName());
         albumNode.setAttribute("mediaType", "album");
 
@@ -181,12 +178,27 @@ namespace lms::api::subsonic
             });
         }
 
-        albumNode.createEmptyArrayChild("artists");
-        for (const Artist::pointer& artist : release->getReleaseArtists())
-            albumNode.addArrayChild("artists", createArtistNode(artist));
+        if (id3)
+        {
+            albumNode.createEmptyArrayChild("artists");
+            for (const Artist::pointer& artist : release->getReleaseArtists())
+                albumNode.addArrayChild("artists", createArtistNode(artist));
 
-        albumNode.setAttribute("displayArtist", release->getArtistDisplayName());
-        albumNode.addChild("originalReleaseDate", createItemDateNode(release->getOriginalDate(), release->getOriginalYear()));
+            albumNode.setAttribute("displayArtist", release->getArtistDisplayName());
+        }
+        else
+        {
+            albumNode.createEmptyArrayChild("albumArtists");
+            for (const Artist::pointer& artist : release->getReleaseArtists())
+                albumNode.addArrayChild("albumArtists", createArtistNode(artist));
+
+            albumNode.setAttribute("displayAlbumArtist", release->getArtistDisplayName());
+
+            albumNode.createEmptyArrayChild("artists");
+            albumNode.setAttribute("displayArtist", "");
+        }
+        albumNode.addChild("originalReleaseDate", createItemDateNode(release->getOriginalDate()));
+        albumNode.addChild("releaseDate", createItemDateNode(release->getDate()));
 
         albumNode.setAttribute("isCompilation", release->isCompilation());
 
@@ -205,6 +217,18 @@ namespace lms::api::subsonic
         release->visitLabels([&](const Label::pointer& label) {
             albumNode.addArrayChild("recordLabels", createRecordLabel(label));
         });
+
+        auto advisoryToExplicitStatus = [&](const core::EnumSet<db::Advisory> advisories) -> std::string_view {
+            if (advisories.contains(db::Advisory::Explicit))
+                return "explicit";
+
+            if (advisories.contains(db::Advisory::Clean))
+                return "clean";
+
+            return "";
+        };
+
+        albumNode.setAttribute("explicitStatus", advisoryToExplicitStatus(release->getAdvisories()));
 
         return albumNode;
     }

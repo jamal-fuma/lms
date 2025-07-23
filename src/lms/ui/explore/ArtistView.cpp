@@ -21,15 +21,16 @@
 
 #include <Wt/WPushButton.h>
 
-#include "core/ILogger.hpp"
 #include "core/String.hpp"
-#include "database/Artist.hpp"
-#include "database/Cluster.hpp"
-#include "database/Release.hpp"
-#include "database/ScanSettings.hpp"
 #include "database/Session.hpp"
-#include "database/Track.hpp"
-#include "database/User.hpp"
+#include "database/objects/Artist.hpp"
+#include "database/objects/ArtistInfo.hpp"
+#include "database/objects/ArtworkId.hpp"
+#include "database/objects/Cluster.hpp"
+#include "database/objects/Release.hpp"
+#include "database/objects/ScanSettings.hpp"
+#include "database/objects/Track.hpp"
+#include "database/objects/User.hpp"
 #include "services/feedback/IFeedbackService.hpp"
 #include "services/recommendation/IRecommendationService.hpp"
 
@@ -119,6 +120,8 @@ namespace lms::ui
         LmsApp->setTitle(artist->getName());
         _artistId = *artistId;
 
+        refreshArtwork(artist->getPreferredArtworkId());
+        refreshArtistInfo();
         refreshReleases();
         refreshAppearsOnReleases();
         refreshNonReleaseTracks();
@@ -189,13 +192,48 @@ namespace lms::ui
         }
     }
 
+    void Artist::refreshArtwork(db::ArtworkId artworkId)
+    {
+        std::unique_ptr<Wt::WImage> artworkImage;
+        if (artworkId.isValid())
+        {
+            artworkImage = utils::createArtworkImage(artworkId, ArtworkResource::DefaultArtworkType::Artist, ArtworkResource::Size::Large);
+            artworkImage->addStyleClass("Lms-cursor-pointer"); // HACK
+        }
+        else
+            artworkImage = utils::createDefaultArtworkImage(ArtworkResource::DefaultArtworkType::Artist);
+
+        auto* image{ bindWidget<Wt::WImage>("artwork", std::move(artworkImage)) };
+        if (artworkId.isValid())
+        {
+            image->clicked().connect([artworkId] {
+                utils::showArtworkModal(Wt::WLink{ LmsApp->getArtworkResource()->getArtworkUrl(artworkId, ArtworkResource::DefaultArtworkType::Artist) });
+            });
+        }
+    }
+
+    void Artist::refreshArtistInfo()
+    {
+        db::ArtistInfo::find(LmsApp->getDbSession(), _artistId, db::Range{ .offset = 0, .size = 1 }, [this](const db::ArtistInfo::pointer& _info) {
+            if (!_info->getBiography().empty())
+            {
+                setCondition("if-has-biography", true);
+                Wt::WText* bio{ bindNew<Wt::WText>("biography", std::string{ _info->getBiography() }, Wt::TextFormat::Plain) };
+                bio->setInline(false);
+                bio->setToolTip(tr("Lms.Explore.Artist.biography"));
+                bio->clicked().connect([bio] {
+                    bio->toggleStyleClass("Lms-multiline-clamp", !bio->hasStyleClass("Lms-multiline-clamp")); // hack
+                });
+            }
+        });
+    }
+
     void Artist::refreshReleases()
     {
         _releaseContainers.clear();
 
         Release::FindParameters params;
-        params.setClusters(_filters.getClusters());
-        params.setMediaLibrary(_filters.getMediaLibrary());
+        params.setFilters(_filters.getDbFilters());
         params.setArtist(_artistId, { TrackArtistLinkType::ReleaseArtist }, {});
         params.setSortMethod(LmsApp->getUser()->getUIArtistReleaseSortMethod());
 
@@ -252,8 +290,7 @@ namespace lms::ui
         _appearsOnReleaseContainer = {};
 
         Release::FindParameters params;
-        params.setClusters(_filters.getClusters());
-        params.setMediaLibrary(_filters.getMediaLibrary());
+        params.setFilters(_filters.getDbFilters());
         params.setArtist(_artistId, types, { TrackArtistLinkType::ReleaseArtist });
         params.setSortMethod(ReleaseSortMethod::OriginalDateDesc);
 
@@ -337,8 +374,7 @@ namespace lms::ui
         const Range range{ static_cast<std::size_t>(_trackContainer->getCount()), _tracksBatchSize };
 
         Track::FindParameters params;
-        params.setClusters(_filters.getClusters());
-        params.setMediaLibrary(_filters.getMediaLibrary());
+        params.setFilters(_filters.getDbFilters());
         params.setArtist(_artistId);
         params.setRange(range);
         params.setSortMethod(TrackSortMethod::Name);

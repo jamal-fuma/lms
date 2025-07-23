@@ -167,7 +167,7 @@ namespace lms::core::stringUtils::tests
             std::string expectedOutput;
         };
 
-        TestCase tests[]{
+        const TestCase tests[]{
             { { "" }, ';', '\\', "" },
             { { ";" }, ';', '\\', "\\;" },
             { { ";;" }, ';', '\\', "\\;\\;" },
@@ -299,16 +299,43 @@ namespace lms::core::stringUtils::tests
         }
     }
 
-    TEST(Stringutils, date)
+    TEST(Stringutils, DateToString)
     {
-        const Wt::WDate date{ 2020, 01, 03 };
-        EXPECT_EQ(toISO8601String(date), "2020-01-03");
+        {
+            const Wt::WDate date{ 2020, 01, 03 };
+            EXPECT_EQ(toISO8601String(date), "2020-01-03");
+        }
+
+        {
+            const Wt::WDate date;
+            EXPECT_EQ(toISO8601String(date), "");
+        }
     }
 
-    TEST(Stringutils, dateTime)
+    TEST(Stringutils, DateTimeToString)
     {
-        const Wt::WDateTime dateTime{ Wt::WDate{ 2020, 01, 03 }, Wt::WTime{ 9, 8, 11, 75 } };
-        EXPECT_EQ(toISO8601String(dateTime), "2020-01-03T09:08:11.075");
+        {
+            const Wt::WDateTime dateTime{ Wt::WDate{ 2020, 01, 03 }, Wt::WTime{ 9, 8, 11, 75 } };
+            EXPECT_EQ(toISO8601String(dateTime), "2020-01-03T09:08:11.075Z");
+        }
+
+        {
+            const Wt::WDateTime dateTime{ Wt::WDate{ 2020, 01, 03 } };
+            EXPECT_EQ(toISO8601String(dateTime), "2020-01-03T00:00:00.000Z");
+        }
+
+        {
+            const Wt::WDateTime dateTime;
+            EXPECT_EQ(toISO8601String(dateTime), "");
+        }
+    }
+
+    TEST(Stringutils, DateTimeFromString)
+    {
+        EXPECT_EQ(fromISO8601String("2020-01-03T09:08:11.075Z"), (Wt::WDateTime{ Wt::WDate{ 2020, 01, 03 }, Wt::WTime{ 9, 8, 11, 75 } }));
+        EXPECT_EQ(fromISO8601String("2020-01-03T09:08:11.075"), (Wt::WDateTime{ Wt::WDate{ 2020, 01, 03 }, Wt::WTime{ 9, 8, 11, 75 } }));
+        EXPECT_EQ(fromISO8601String("2020-01-03"), Wt::WDateTime{});
+        EXPECT_EQ(fromISO8601String(""), Wt::WDateTime{});
     }
 
     TEST(StringUtils, stringEndsWith)
@@ -321,5 +348,17 @@ namespace lms::core::stringUtils::tests
         EXPECT_FALSE(stringEndsWith("FooBar", "1FooBar"));
         EXPECT_FALSE(stringEndsWith("FooBar", "1FooBar"));
         EXPECT_FALSE(stringEndsWith("FooBar", "R"));
+    }
+
+    TEST(StringUtils, stringCaseInsensitiveContains)
+    {
+        EXPECT_TRUE(stringCaseInsensitiveContains("FooBar", "Bar"));
+        EXPECT_TRUE(stringCaseInsensitiveContains("FooBar", "bar"));
+        EXPECT_TRUE(stringCaseInsensitiveContains("FooBar", "Foo"));
+        EXPECT_TRUE(stringCaseInsensitiveContains("FooBar", "foo"));
+        EXPECT_FALSE(stringCaseInsensitiveContains("something", "foo"));
+        EXPECT_TRUE(stringCaseInsensitiveContains("FooBar", ""));
+        EXPECT_TRUE(stringCaseInsensitiveContains("", ""));
+        EXPECT_FALSE(stringCaseInsensitiveContains("", "Foo"));
     }
 } // namespace lms::core::stringUtils::tests

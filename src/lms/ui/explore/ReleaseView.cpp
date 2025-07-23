@@ -24,17 +24,19 @@
 #include <Wt/WAnchor.h>
 #include <Wt/WImage.h>
 #include <Wt/WPushButton.h>
+#include <Wt/WTemplate.h>
 
 #include "av/IAudioFile.hpp"
-#include "core/ILogger.hpp"
-#include "database/Artist.hpp"
-#include "database/Cluster.hpp"
-#include "database/Release.hpp"
-#include "database/ScanSettings.hpp"
+#include "core/String.hpp"
 #include "database/Session.hpp"
-#include "database/Track.hpp"
-#include "database/TrackArtistLink.hpp"
-#include "database/User.hpp"
+#include "database/Types.hpp"
+#include "database/objects/Artist.hpp"
+#include "database/objects/Cluster.hpp"
+#include "database/objects/Release.hpp"
+#include "database/objects/ScanSettings.hpp"
+#include "database/objects/Track.hpp"
+#include "database/objects/TrackArtistLink.hpp"
+#include "database/objects/User.hpp"
 #include "services/feedback/IFeedbackService.hpp"
 #include "services/recommendation/IRecommendationService.hpp"
 #include "services/scrobbling/IScrobblingService.hpp"
@@ -129,6 +131,13 @@ namespace lms::ui
                 }
             }
 
+            // TODO make labels clickable to automatically add filters
+            if (const std::vector<std::string> labels{ release->getLabelNames() }; !labels.empty())
+            {
+                releaseInfo->setCondition("if-has-labels", true);
+                releaseInfo->bindString("release-labels", core::stringUtils::joinStrings(labels, " · "));
+            }
+
             // TODO: save in DB and aggregate all this
             for (const Track::pointer& track : Track::find(LmsApp->getDbSession(), Track::FindParameters{}.setRelease(releaseId).setRange(Range{ 0, 1 })).results)
             {
@@ -177,6 +186,53 @@ namespace lms::ui
 
             return core::stringUtils::readAs<ReleaseId::ValueType>(wApp->internalPathNextPart("/release/"));
         }
+
+        void fillTrackArtistLinks(Wt::WTemplate* trackEntry, db::TrackId trackId)
+        {
+            const User::pointer user{ LmsApp->getUser() };
+            if (!user->getUIEnableInlineArtistRelationships())
+                return;
+
+            const core::EnumSet<db::TrackArtistLinkType> inlineArtistRelationships{ user->getUIInlineArtistRelationships() };
+            if (inlineArtistRelationships.empty())
+                return;
+
+            const std::map<Wt::WString, std::set<ArtistId>> artistsByRole{ TrackListHelpers::getArtistsByRole(trackId, inlineArtistRelationships) };
+            if (artistsByRole.empty())
+                return;
+
+            trackEntry->setCondition("if-has-artist-links", true);
+            Wt::WContainerWidget* artistLinksContainer = trackEntry->bindNew<Wt::WContainerWidget>("artist-links");
+
+            for (const auto& [role, artists] : artistsByRole)
+            {
+                Wt::WTemplate* artistLinkEntry{ artistLinksContainer->addNew<Wt::WTemplate>(Wt::WString::tr("Lms.Explore.Release.template.artist-links-entry")) };
+                artistLinkEntry->bindString("role", role, Wt::TextFormat::Plain);
+                artistLinkEntry->bindWidget("anchors", utils::createArtistAnchorList(std::vector<db::ArtistId>(std::cbegin(artists), std::cend(artists))));
+            }
+        }
+
+        bool shouldDisplayTrackArtists(db::ReleaseId releaseId)
+        {
+            bool res{ true };
+
+            db::Artist::FindParameters params;
+            params.setRelease(releaseId);
+            params.setLinkType(db::TrackArtistLinkType::ReleaseArtist);
+            auto releaseArtists{ db::Artist::findIds(LmsApp->getDbSession(), params) };
+
+            params.setLinkType(db::TrackArtistLinkType::Artist);
+            auto trackArtists{ db::Artist::findIds(LmsApp->getDbSession(), params) };
+
+            if (trackArtists.results.size() == 1)
+            {
+                if (releaseArtists.results.empty() || trackArtists.results == releaseArtists.results)
+                    res = false;
+            }
+
+            return res;
+        }
+
     } // namespace
 
     Release::Release(Filters& filters, PlayQueueController& playQueueController)
@@ -217,7 +273,7 @@ namespace lms::ui
         if (!releaseId)
             throw ReleaseNotFoundException{};
 
-        auto similarReleasesIds{ core::Service<recommendation::IRecommendationService>::get()->getSimilarReleases(*releaseId, 6) };
+        auto similarReleasesIds{ core::Service<recommendation::IRecommendationService>::get()->getSimilarReleases(*releaseId, 5) };
 
         auto transaction{ LmsApp->getDbSession().createReadTransaction() };
 
@@ -230,9 +286,15 @@ namespace lms::ui
 
         refreshCopyright(release);
         refreshLinks(release);
+        refreshOtherVersions(release);
         refreshSimilarReleases(similarReleasesIds);
 
         bindString("name", Wt::WString::fromUTF8(std::string{ release->getName() }), Wt::TextFormat::Plain);
+        if (std::string_view comment{ release->getComment() }; !comment.empty())
+        {
+            setCondition("if-has-release-comment", true);
+            bindString("comment", Wt::WString::fromUTF8(std::string{ comment }), Wt::TextFormat::Plain);
+        }
 
         Wt::WString year{ releaseHelpers::buildReleaseYearString(release->getYear(), release->getOriginalYear()) };
         if (!year.empty())
@@ -244,8 +306,7 @@ namespace lms::ui
         bindString("duration", utils::durationToString(release->getDuration()), Wt::TextFormat::Plain);
 
         refreshReleaseArtists(release);
-
-        bindWidget<Wt::WImage>("cover", utils::createReleaseCover(release->getId(), ArtworkResource::Size::Large));
+        refreshArtwork(release->getPreferredArtworkId());
 
         Wt::WContainerWidget* clusterContainers{ bindNew<Wt::WContainerWidget>("clusters") };
         {
@@ -318,7 +379,7 @@ namespace lms::ui
 
         Wt::WContainerWidget* rootContainer{ bindNew<Wt::WContainerWidget>("container") };
 
-        const bool variousArtists{ release->hasVariousArtists() };
+        bool displayTrackArtists{ shouldDisplayTrackArtists(*releaseId) };
         const auto totalDisc{ release->getTotalDisc() };
         const std::size_t discCount{ release->getDiscCount() };
         const bool hasDiscSubtitle{ release->hasDiscSubtitle() };
@@ -326,12 +387,25 @@ namespace lms::ui
 
         // Expect to be called in asc order
         std::map<std::size_t, Wt::WContainerWidget*> trackContainers;
-        auto getOrAddDiscContainer = [&, releaseId = _releaseId](std::size_t discNumber, const std::string& discSubtitle) -> Wt::WContainerWidget* {
+        auto getOrAddDiscContainer = [&, releaseId = _releaseId](std::size_t discNumber, const std::string& discSubtitle, db::ArtworkId mediaArtworkId) -> Wt::WContainerWidget* {
             if (auto it{ trackContainers.find(discNumber) }; it != std::cend(trackContainers))
                 return it->second;
 
             Template* disc{ rootContainer->addNew<Template>(Wt::WString::tr("Lms.Explore.Release.template.entry-disc")) };
             disc->addFunction("id", &Wt::WTemplate::Functions::id);
+
+            if (mediaArtworkId.isValid())
+            {
+                auto image{ utils::createArtworkImage(mediaArtworkId, ArtworkResource::DefaultArtworkType::Release, ArtworkResource::Size::Small) };
+
+                disc->setCondition("if-has-artwork", true);
+
+                image->addStyleClass("Lms-cover-track rounded"); // HACK
+                image->clicked().connect([=] {
+                    utils::showArtworkModal(Wt::WLink{ LmsApp->getArtworkResource()->getArtworkUrl(mediaArtworkId, ArtworkResource::DefaultArtworkType::Release) });
+                });
+                disc->bindWidget<Wt::WImage>("artwork", std::move(image));
+            }
 
             if (discSubtitle.empty())
                 disc->bindNew<Wt::WText>("disc-title", Wt::WString::tr("Lms.Explore.Release.disc").arg(discNumber));
@@ -385,18 +459,17 @@ namespace lms::ui
         db::Track::FindParameters params;
         params.setRelease(_releaseId);
         params.setSortMethod(db::TrackSortMethod::Release);
-        params.setClusters(_filters.getClusters());
-        params.setMediaLibrary(_filters.getMediaLibrary());
+        params.setFilters(_filters.getDbFilters()); // TODO: do we really want to hide all tracks when a release does not match the current label filter?
 
         db::Track::find(LmsApp->getDbSession(), params, [&](const db::Track::pointer& track) {
             const db::TrackId trackId{ track->getId() };
             const auto discNumber{ track->getDiscNumber() };
 
-            Wt::WContainerWidget* container;
+            Wt::WContainerWidget* container{};
             if (useSubtitleContainers && discNumber)
-                container = getOrAddDiscContainer(*discNumber, track->getDiscSubtitle());
+                container = getOrAddDiscContainer(*discNumber, track->getDiscSubtitle(), track->getPreferredMediaArtworkId());
             else if (hasDiscSubtitle && !discNumber)
-                container = getOrAddDiscContainer(0, track->getDiscSubtitle());
+                container = getOrAddDiscContainer(0, track->getDiscSubtitle(), track->getPreferredMediaArtworkId());
             else
                 container = getOrAddNoDiscContainer();
 
@@ -406,13 +479,14 @@ namespace lms::ui
             entry->bindString("name", Wt::WString::fromUTF8(track->getName()), Wt::TextFormat::Plain);
 
             const auto artists{ track->getArtistIds({ TrackArtistLinkType::Artist }) };
-            // TODO: display artist if it is single and not the one of the release (variousArtists is false in that case)
-            if (variousArtists && !artists.empty())
+            if (displayTrackArtists && !artists.empty())
             {
                 entry->setCondition("if-has-artists", true);
                 entry->bindWidget("artists", utils::createArtistDisplayNameWithAnchors(track->getArtistDisplayName(), artists));
                 entry->bindWidget("artists-md", utils::createArtistDisplayNameWithAnchors(track->getArtistDisplayName(), artists));
             }
+
+            fillTrackArtistLinks(entry, track->getId());
 
             auto trackNumber{ track->getTrackNumber() };
             if (trackNumber)
@@ -491,6 +565,26 @@ namespace lms::ui
         });
     }
 
+    void Release::refreshArtwork(db::ArtworkId artworkId)
+    {
+        std::unique_ptr<Wt::WImage> artworkImage;
+        if (artworkId.isValid())
+        {
+            artworkImage = utils::createArtworkImage(artworkId, ArtworkResource::DefaultArtworkType::Release, ArtworkResource::Size::Large);
+            artworkImage->addStyleClass("Lms-cursor-pointer"); // HACK
+        }
+        else
+            artworkImage = utils::createDefaultArtworkImage(ArtworkResource::DefaultArtworkType::Release);
+
+        auto* image{ bindWidget<Wt::WImage>("artwork", std::move(artworkImage)) };
+        if (artworkId.isValid())
+        {
+            image->clicked().connect([artworkId] {
+                utils::showArtworkModal(Wt::WLink{ LmsApp->getArtworkResource()->getArtworkUrl(artworkId, ArtworkResource::DefaultArtworkType::Release) });
+            });
+        }
+    }
+
     void Release::refreshReleaseArtists(const db::Release::pointer& release)
     {
         auto container{ utils::createArtistsAnchorsForRelease(release) };
@@ -538,15 +632,45 @@ namespace lms::ui
         }
     }
 
-    void Release::refreshSimilarReleases(const std::vector<ReleaseId>& similarReleasesId)
+    void Release::refreshOtherVersions(const db::Release::pointer& release)
     {
-        if (similarReleasesId.empty())
+        const auto groupMBID{ release->getGroupMBID() };
+        if (!groupMBID)
+            return;
+
+        db::Release::FindParameters params;
+        params.setReleaseGroupMBID(groupMBID);
+        params.setSortMethod(db::ReleaseSortMethod::DateAsc);
+
+        const auto releaseIds{ db::Release::findIds(LmsApp->getDbSession(), params) };
+        if (releaseIds.results.size() <= 1)
+            return;
+
+        setCondition("if-has-other-versions", true);
+        auto* container{ bindNew<Wt::WContainerWidget>("other-versions") };
+
+        for (const ReleaseId id : releaseIds.results)
+        {
+            if (id == _releaseId)
+                continue;
+
+            const db::Release::pointer otherVersionRelease{ db::Release::find(LmsApp->getDbSession(), id) };
+            if (!otherVersionRelease)
+                continue;
+
+            container->addWidget(releaseListHelpers::createEntryForOtherVersions(otherVersionRelease));
+        }
+    }
+
+    void Release::refreshSimilarReleases(const std::vector<ReleaseId>& similarReleaseIds)
+    {
+        if (similarReleaseIds.empty())
             return;
 
         setCondition("if-has-similar-releases", true);
         auto* similarReleasesContainer{ bindNew<Wt::WContainerWidget>("similar-releases") };
 
-        for (const ReleaseId id : similarReleasesId)
+        for (const ReleaseId id : similarReleaseIds)
         {
             const db::Release::pointer similarRelease{ db::Release::find(LmsApp->getDbSession(), id) };
             if (!similarRelease)

@@ -19,8 +19,8 @@
 
 #include "responses/User.hpp"
 
-#include "database/MediaLibrary.hpp"
-#include "database/User.hpp"
+#include "database/objects/MediaLibrary.hpp"
+#include "database/objects/User.hpp"
 
 #include "RequestContext.hpp"
 #include "SubsonicId.hpp"
@@ -47,7 +47,7 @@ namespace lms::api::subsonic
 
         // users can access all libraries
         db::MediaLibrary::find(context.dbSession, [&](const db::MediaLibrary::pointer& library) {
-            userNode.addArrayValue("folder", idToString(library->getId()));
+            userNode.addArrayValue("folder", library->getId().getValue());
         });
 
         return userNode;

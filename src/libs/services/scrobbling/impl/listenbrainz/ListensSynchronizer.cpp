@@ -21,21 +21,23 @@
 
 #include <Wt/Json/Array.h>
 #include <Wt/Json/Object.h>
+#include <Wt/Json/Parser.h>
 #include <Wt/Json/Serializer.h>
 #include <Wt/Json/Value.h>
 #include <boost/asio/bind_executor.hpp>
+#include <boost/asio/post.hpp>
 
 #include "ListensParser.hpp"
 #include "core/IConfig.hpp"
 #include "core/Service.hpp"
 #include "core/http/IClient.hpp"
-#include "database/Artist.hpp"
-#include "database/Db.hpp"
-#include "database/Listen.hpp"
-#include "database/Release.hpp"
+#include "database/IDb.hpp"
 #include "database/Session.hpp"
-#include "database/Track.hpp"
-#include "database/User.hpp"
+#include "database/objects/Artist.hpp"
+#include "database/objects/Listen.hpp"
+#include "database/objects/Release.hpp"
+#include "database/objects/Track.hpp"
+#include "database/objects/User.hpp"
 #include "services/scrobbling/Exception.hpp"
 
 #include "Utils.hpp"
@@ -209,7 +211,7 @@ namespace lms::scrobbling::listenBrainz
         }
     } // namespace
 
-    ListensSynchronizer::ListensSynchronizer(boost::asio::io_context& ioContext, db::Db& db, core::http::IClient& client)
+    ListensSynchronizer::ListensSynchronizer(boost::asio::io_context& ioContext, db::IDb& db, core::http::IClient& client)
         : _ioContext{ ioContext }
         , _db{ db }
         , _client{ client }
@@ -245,14 +247,14 @@ namespace lms::scrobbling::listenBrainz
 
             request.priority = core::http::ClientRequestParameters::Priority::Normal;
             request.onSuccessFunc = [this, timedListen](std::string_view) {
-                _strand.dispatch([this, timedListen] {
+                boost::asio::post(boost::asio::bind_executor(_strand, [this, timedListen] {
                     if (saveListen(timedListen, db::SyncState::Synchronized))
                     {
                         UserContext& context{ getUserContext(timedListen.userId) };
                         if (context.listenCount)
                             (*context.listenCount)++;
                     }
-                });
+                }));
             };
             // on failure, this listen will be sent during the next sync
         }
@@ -430,13 +432,13 @@ namespace lms::scrobbling::listenBrainz
 
     void ListensSynchronizer::onSyncEnded(UserContext& context)
     {
-        _strand.dispatch([this, &context] {
+        boost::asio::post(boost::asio::bind_executor(_strand, [this, &context] {
             LOG(INFO, "Sync done for user '" << context.listenBrainzUserName << "', fetched: " << context.fetchedListenCount << ", matched: " << context.matchedListenCount << ", imported: " << context.importedListenCount);
             context.syncing = false;
 
             if (!isSyncing())
                 scheduleSync(_syncListensPeriod);
-        });
+        }));
     }
 
     void ListensSynchronizer::enqueValidateToken(UserContext& context)
@@ -479,7 +481,7 @@ namespace lms::scrobbling::listenBrainz
         request.priority = core::http::ClientRequestParameters::Priority::Low;
         request.onSuccessFunc = [this, &context](std::string_view msgBody) {
             const auto listenCount{ parseListenCount(msgBody) };
-            _strand.dispatch([this, listenCount, &context] {
+            boost::asio::post(boost::asio::bind_executor(_strand, [this, listenCount, &context] {
                 if (listenCount)
                     LOG(DEBUG, "Listen count for listenbrainz user '" << context.listenBrainzUserName << "' = " << *listenCount);
 
@@ -494,7 +496,7 @@ namespace lms::scrobbling::listenBrainz
 
                 context.maxDateTime = Wt::WDateTime::currentDateTime();
                 enqueGetListens(context);
-            });
+            }));
         };
         request.onFailureFunc = [this, &context] {
             onSyncEnded(context);

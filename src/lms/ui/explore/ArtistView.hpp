@@ -20,12 +20,11 @@
 #pragma once
 
 #include <map>
-#include <optional>
 
-#include "core/EnumSet.hpp"
-#include "database/ArtistId.hpp"
 #include "database/Object.hpp"
-#include "database/ReleaseId.hpp"
+#include "database/objects/ArtistId.hpp"
+#include "database/objects/ArtworkId.hpp"
+#include "database/objects/ReleaseId.hpp"
 
 #include "ReleaseTypes.hpp"
 #include "common/Template.hpp"
@@ -49,6 +48,8 @@ namespace lms::ui
 
     private:
         void refreshView();
+        void refreshArtwork(db::ArtworkId artworkId);
+        void refreshArtistInfo();
         void refreshReleases();
         void refreshAppearsOnReleases();
         void refreshNonReleaseTracks();

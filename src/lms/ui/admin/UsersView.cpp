@@ -26,7 +26,7 @@
 #include "core/ILogger.hpp"
 #include "core/Service.hpp"
 #include "database/Session.hpp"
-#include "database/User.hpp"
+#include "database/objects/User.hpp"
 #include "services/auth/IPasswordService.hpp"
 
 #include "LmsApplication.hpp"
@@ -43,7 +43,7 @@ namespace lms::ui
 
         _container = bindNew<Wt::WContainerWidget>("users");
 
-        if (core::Service<auth::IPasswordService>::get() && core::Service<auth::IPasswordService>::get()->canSetPasswords())
+        if (LmsApp->getAuthBackend() == AuthenticationBackend::Internal)
         {
             setCondition("if-can-create-user", true);
 

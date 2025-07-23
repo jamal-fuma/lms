@@ -20,6 +20,7 @@
 #include "MediaPlayer.hpp"
 
 #include <Wt/Json/Object.h>
+#include <Wt/Json/Parser.h>
 #include <Wt/Json/Serializer.h>
 #include <Wt/Json/Value.h>
 #include <Wt/WPushButton.h>
@@ -27,13 +28,13 @@
 #include "core/ILogger.hpp"
 #include "core/String.hpp"
 #include "core/Utils.hpp"
-#include "database/Artist.hpp"
-#include "database/Release.hpp"
 #include "database/Session.hpp"
-#include "database/Track.hpp"
-#include "database/TrackList.hpp"
 #include "database/Types.hpp"
-#include "database/User.hpp"
+#include "database/objects/Artist.hpp"
+#include "database/objects/Release.hpp"
+#include "database/objects/Track.hpp"
+#include "database/objects/TrackList.hpp"
+#include "database/objects/User.hpp"
 
 #include "LmsApplication.hpp"
 #include "Utils.hpp"
@@ -108,16 +109,12 @@ namespace lms::ui
             return std::nullopt;
         }
 
-        std::optional<MediaPlayer::Bitrate> bitrateFromString(const std::string& str)
+        std::optional<MediaPlayer::Bitrate> bitrateFromInt(int bitRate)
         {
-            const auto value{ core::stringUtils::readAs<int>(str) };
-            if (!value)
+            if (!db::isAudioBitrateAllowed(bitRate))
                 return std::nullopt;
 
-            if (!db::isAudioBitrateAllowed(*value))
-                return std::nullopt;
-
-            return *value;
+            return bitRate;
         }
 
         std::optional<MediaPlayer::Settings::ReplayGain::Mode> replayGainModeFromString(const std::string& str)
@@ -165,7 +162,7 @@ namespace lms::ui
                     const Json::Object transcoding{ transcodingValue };
                     settings.transcoding.mode = transcodingModeFromString(transcoding.get("mode").toString().orIfNull("")).value_or(Settings::Transcoding::defaultMode);
                     settings.transcoding.format = formatFromString(transcoding.get("format").toString().orIfNull("")).value_or(Settings::Transcoding::defaultFormat);
-                    settings.transcoding.bitrate = bitrateFromString(transcoding.get("bitrate").toString().orIfNull("")).value_or(Settings::Transcoding::defaultBitrate);
+                    settings.transcoding.bitrate = bitrateFromInt(transcoding.get("bitrate").toNumber().orIfNull(0)).value_or(Settings::Transcoding::defaultBitrate);
                 }
             }
             {
@@ -217,7 +214,7 @@ namespace lms::ui
             Settings defaultSettings;
 
             std::ostringstream oss;
-            oss << "LMS.mediaplayer.init("
+            oss << jsRef() + ".mediaplayer = new LMSMediaPlayer("
                 << jsRef()
                 << ", defaultSettings = " << settingsToJSString(defaultSettings)
                 << ")";
@@ -226,6 +223,8 @@ namespace lms::ui
             doJavaScript(oss.str());
         }
     }
+
+    MediaPlayer::~MediaPlayer() = default;
 
     void MediaPlayer::loadTrack(db::TrackId trackId, bool play, float replayGain)
     {
@@ -253,16 +252,32 @@ namespace lms::ui
                 << " replayGain: " << replayGain << ","
                 << " title: \"" << core::stringUtils::jsEscape(track->getName()) << "\","
                 << " artist: \"" << (!artists.empty() ? core::stringUtils::jsEscape(track->getArtistDisplayName()) : "") << "\","
-                << " release: \"" << (track->getRelease() ? core::stringUtils::jsEscape(track->getRelease()->getName()) : "") << "\","
-                << " artwork: ["
-                << "   { src: \"" << LmsApp->getArtworkResource()->getTrackImageUrl(trackId, ArtworkResource::Size::Small) << "\", sizes: \"128x128\",	type: \"image/jpeg\" },"
-                << "   { src: \"" << LmsApp->getArtworkResource()->getTrackImageUrl(trackId, ArtworkResource::Size::Large) << "\", sizes: \"512x512\",	type: \"image/jpeg\" },"
-                << " ]"
-                << "};";
+                << " release: \"" << (track->getRelease() ? core::stringUtils::jsEscape(track->getRelease()->getName()) : "") << "\",";
+
+            db::ArtworkId artworkId{ track->getPreferredMediaArtworkId() };
+            if (!artworkId.isValid())
+                artworkId = track->getPreferredArtworkId();
+            if (artworkId.isValid())
+            {
+                // Potential issue: If the image is really not here, we fall back on a default svg image: the provided type does not match, so we don't put type here
+                // Another solution would be to test the image presence and put type accordingly
+                oss << " artwork: ["
+                    << "   { src: \"" << LmsApp->getArtworkResource()->getArtworkUrl(artworkId, ArtworkResource::DefaultArtworkType::Track, ArtworkResource::Size::Small) << "\", sizes: \"128x128\" },"
+                    << "   { src: \"" << LmsApp->getArtworkResource()->getArtworkUrl(artworkId, ArtworkResource::DefaultArtworkType::Track, ArtworkResource::Size::Large) << "\", sizes: \"512x512\" },"
+                    << " ]";
+            }
+            else
+            {
+                oss << " artwork: ["
+                    << "   { src: \"" << LmsApp->getArtworkResource()->getDefaultArtworkUrl(ArtworkResource::DefaultArtworkType::Track) << "\", type: \"image/svg+xml\" },"
+                    << " ]";
+            }
+            oss << "};";
+
             // Update 'sizes' above to match this:
             static_assert(static_cast<std::underlying_type_t<ArtworkResource::Size>>(ArtworkResource::Size::Small) == 128);
             static_assert(static_cast<std::underlying_type_t<ArtworkResource::Size>>(ArtworkResource::Size::Large) == 512);
-            oss << "LMS.mediaplayer.loadTrack(params, " << (play ? "true" : "false") << ")"; // true to autoplay
+            oss << jsRef() + ".mediaplayer.loadTrack(params, " << (play ? "true" : "false") << ")"; // true to autoplay
 
             _title->setTextFormat(Wt::TextFormat::Plain);
             _title->setText(Wt::WString::fromUTF8(track->getName()));
@@ -310,7 +325,7 @@ namespace lms::ui
 
     void MediaPlayer::stop()
     {
-        doJavaScript("LMS.mediaplayer.stop()");
+        doJavaScript(jsRef() + ".mediaplayer.stop()");
     }
 
     void MediaPlayer::setSettings(const Settings& settings)
@@ -319,7 +334,7 @@ namespace lms::ui
 
         {
             std::ostringstream oss;
-            oss << "LMS.mediaplayer.setSettings(settings = " << settingsToJSString(settings) << ")";
+            oss << jsRef() + ".mediaplayer.setSettings(settings = " << settingsToJSString(settings) << ")";
 
             LMS_LOG(UI, DEBUG, "Running js = '" << oss.str() << "'");
             doJavaScript(oss.str());

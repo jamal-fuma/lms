@@ -32,13 +32,12 @@
 #include "core/ILogger.hpp"
 #include "core/Random.hpp"
 #include "core/Service.hpp"
-#include "core/String.hpp"
-#include "database/Artist.hpp"
-#include "database/Release.hpp"
 #include "database/Session.hpp"
-#include "database/Track.hpp"
-#include "database/TrackList.hpp"
-#include "database/User.hpp"
+#include "database/objects/Artist.hpp"
+#include "database/objects/Release.hpp"
+#include "database/objects/Track.hpp"
+#include "database/objects/TrackList.hpp"
+#include "database/objects/User.hpp"
 #include "services/feedback/IFeedbackService.hpp"
 #include "services/recommendation/IPlaylistGeneratorService.hpp"
 
@@ -97,7 +96,7 @@ namespace lms::ui
                 auto transaction{ LmsApp->getDbSession().createReadTransaction() };
 
                 TrackList::FindParameters params;
-                params.setType(TrackListType::Playlist);
+                params.setType(TrackListType::PlayList);
                 params.setUser(LmsApp->getUserId());
                 params.setSortMethod(TrackListSortMethod::Name);
 
@@ -328,12 +327,18 @@ namespace lms::ui
             static const std::string queueName{ "__queued_tracks__" };
             queue = db::TrackList::find(LmsApp->getDbSession(), queueName, db::TrackListType::Internal, LmsApp->getUserId());
             if (!queue)
-                queue = LmsApp->getDbSession().create<db::TrackList>(queueName, db::TrackListType::Internal, false, LmsApp->getUser());
+            {
+                queue = LmsApp->getDbSession().create<db::TrackList>(queueName, db::TrackListType::Internal);
+                queue.modify()->setVisibility(db::TrackList::Visibility::Private);
+                queue.modify()->setUser(LmsApp->getUser());
+            }
         }
         else
         {
             static const std::string queueName{ "__temp_queue__" };
-            queue = LmsApp->getDbSession().create<db::TrackList>(queueName, db::TrackListType::Internal, false, LmsApp->getUser());
+            queue = LmsApp->getDbSession().create<db::TrackList>(queueName, db::TrackListType::Internal);
+            queue.modify()->setVisibility(db::TrackList::Visibility::Private);
+            queue.modify()->setUser(LmsApp->getUser());
         }
 
         _queueId = queue->getId();
@@ -485,8 +490,18 @@ namespace lms::ui
             entry->bindWidget("artists-md", utils::createArtistAnchorList(artists));
         }
 
-        auto image{ utils::createTrackImage(track->getId(), ArtworkResource::Size::Small) };
-        image->addStyleClass("Lms-cover-track");
+        db::ArtworkId artworkId{ track->getPreferredMediaArtworkId() };
+        if (!artworkId.isValid())
+            artworkId = track->getPreferredArtworkId();
+
+        std::unique_ptr<Wt::WImage> image;
+        if (artworkId.isValid())
+            image = utils::createArtworkImage(artworkId, ArtworkResource::DefaultArtworkType::Track, ArtworkResource::Size::Small);
+        else
+            image = utils::createDefaultArtworkImage(ArtworkResource::DefaultArtworkType::Track);
+
+        image->addStyleClass("Lms-cover-track rounded"); // HACK
+
         if (const auto release{ track->getRelease() })
         {
             entry->setCondition("if-has-release", true);
@@ -736,7 +751,9 @@ namespace lms::ui
         {
             Session& session{ LmsApp->getDbSession() };
             auto transaction{ session.createWriteTransaction() };
-            TrackList::pointer trackList{ session.create<TrackList>(name.toUTF8(), TrackListType::Playlist, false, LmsApp->getUser()) };
+            TrackList::pointer trackList{ session.create<TrackList>(name.toUTF8(), TrackListType::PlayList) };
+            trackList.modify()->setVisibility(TrackList::Visibility::Private);
+            trackList.modify()->setUser(LmsApp->getUser());
             trackListId = trackList->getId();
         }
 
@@ -752,6 +769,7 @@ namespace lms::ui
 
         TrackList::pointer trackList{ TrackList::find(LmsApp->getDbSession(), trackListId) };
         trackList.modify()->clear();
+        trackList.modify()->setLastModifiedDateTime(Wt::WDateTime::currentDateTime());
 
         Track::FindParameters params;
         params.setTrackList(_queueId);

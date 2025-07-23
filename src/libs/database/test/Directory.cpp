@@ -19,7 +19,7 @@
 
 #include "Common.hpp"
 
-#include "database/Directory.hpp"
+#include "database/objects/Directory.hpp"
 
 namespace lms::db::tests
 {
@@ -260,7 +260,7 @@ namespace lms::db::tests
         ScopedDirectory parent2{ session, "/root_1" };
         ScopedDirectory child2{ session, "/root_1/foo" };
 
-        ScopedMediaLibrary library{ session, "/root" };
+        ScopedMediaLibrary library{ session, "MyLibrary", "/root" };
 
         {
             auto transaction{ session.createReadTransaction() };

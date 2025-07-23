@@ -21,8 +21,14 @@
 
 #include <algorithm>
 
+#include "database/objects/Artwork.hpp"
+#include "database/objects/Image.hpp"
+
 namespace lms::db::tests
 {
+    using ScopedArtwork = ScopedEntity<db::Artwork>;
+    using ScopedImage = ScopedEntity<db::Image>;
+
     TEST_F(DatabaseFixture, Track)
     {
         {
@@ -67,8 +73,8 @@ namespace lms::db::tests
         ScopedTrack track1{ session };
         ScopedTrack track2{ session };
         ScopedTrack track3{ session };
-        ScopedMediaLibrary library{ session };
-        ScopedMediaLibrary otherLibrary{ session };
+        ScopedMediaLibrary library{ session, "MyLibrary", "/root" };
+        ScopedMediaLibrary otherLibrary{ session, "OtherLibrary", "/otherRoot" };
 
         {
             auto transaction{ session.createWriteTransaction() };
@@ -145,11 +151,128 @@ namespace lms::db::tests
         }
     }
 
+    TEST_F(DatabaseFixture, Track_findNextIdRange)
+    {
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            auto range{ Track::findNextIdRange(session, TrackId{}, 0) };
+            EXPECT_FALSE(range.isValid());
+            EXPECT_EQ(range.first, TrackId{});
+            EXPECT_EQ(range.last, TrackId{});
+
+            range = Track::findNextIdRange(session, TrackId{}, 100);
+            EXPECT_FALSE(range.isValid());
+            EXPECT_EQ(range.first, TrackId{});
+            EXPECT_EQ(range.last, TrackId{});
+        }
+
+        ScopedTrack track1{ session };
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            auto range{ Track::findNextIdRange(session, TrackId{}, 0) };
+            EXPECT_FALSE(range.isValid());
+            EXPECT_EQ(range.first, TrackId{});
+            EXPECT_EQ(range.last, TrackId{});
+
+            range = Track::findNextIdRange(session, TrackId{}, 1);
+            EXPECT_TRUE(range.isValid());
+            EXPECT_EQ(range.first, track1.getId());
+            EXPECT_EQ(range.last, track1.getId());
+
+            range = Track::findNextIdRange(session, range.last, 1);
+            EXPECT_FALSE(range.isValid());
+            EXPECT_EQ(range.first, TrackId{});
+            EXPECT_EQ(range.last, TrackId{});
+
+            range = Track::findNextIdRange(session, TrackId{}, 100);
+            EXPECT_TRUE(range.isValid());
+            EXPECT_EQ(range.first, track1.getId());
+            EXPECT_EQ(range.last, track1.getId());
+        }
+
+        ScopedTrack track2{ session };
+        ScopedTrack track3{ session };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            auto range{ Track::findNextIdRange(session, TrackId{}, 2) };
+            EXPECT_TRUE(range.isValid());
+            EXPECT_EQ(range.first, track1.getId());
+            EXPECT_EQ(range.last, track2.getId());
+
+            range = Track::findNextIdRange(session, track2.getId(), 2);
+            EXPECT_TRUE(range.isValid());
+            EXPECT_EQ(range.first, track3.getId());
+            EXPECT_EQ(range.last, track3.getId());
+        }
+    }
+
+    TEST_F(DatabaseFixture, Track_findByRange)
+    {
+        ScopedTrack track1{ session };
+        ScopedTrack track2{ session };
+        ScopedTrack track3{ session };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            std::size_t count{};
+            Track::find(session, IdRange<TrackId>{ .first = track1.getId(), .last = track1.getId() }, [&](const db::Track::pointer& track) {
+                count++;
+                EXPECT_EQ(track->getId(), track1.getId());
+            });
+            EXPECT_EQ(count, 1);
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            std::size_t count{};
+            Track::find(session, IdRange<TrackId>{ .first = track1.getId(), .last = track3.getId() }, [&](const db::Track::pointer&) {
+                count++;
+            });
+            EXPECT_EQ(count, 3);
+        }
+    }
+
+    TEST_F(DatabaseFixture, Track_findAbsoluteFilePath)
+    {
+        ScopedTrack track{ session };
+        const std::filesystem::path absoluteFilePath{ "/path/to/track.mp3" };
+        {
+            auto transaction{ session.createWriteTransaction() };
+            track.get().modify()->setAbsoluteFilePath(absoluteFilePath);
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            TrackId lastRetrievedTrackId;
+            std::vector<std::pair<TrackId, std::filesystem::path>> visitedTracks;
+            Track::findAbsoluteFilePath(session, lastRetrievedTrackId, 10, [&](TrackId trackId, const std::filesystem::path& filePath) {
+                visitedTracks.emplace_back(trackId, filePath);
+            });
+            ASSERT_EQ(visitedTracks.size(), 1);
+            EXPECT_EQ(visitedTracks[0].first, track.getId());
+            EXPECT_EQ(visitedTracks[0].second, absoluteFilePath);
+            EXPECT_EQ(lastRetrievedTrackId, track.getId());
+        }
+    }
+
     TEST_F(DatabaseFixture, Track_MediaLibrary)
     {
         ScopedTrack track{ session };
-        ScopedMediaLibrary library{ session };
-        ScopedMediaLibrary otherLibrary{ session };
+        ScopedMediaLibrary library{ session, "MyLibrary", "/root" };
+        ScopedMediaLibrary otherLibrary{ session, "OtherLibrary", "/otherRoot" };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            EXPECT_TRUE(library->isEmpty());
+            EXPECT_TRUE(otherLibrary->isEmpty());
+        }
 
         {
             auto transaction{ session.createWriteTransaction() };
@@ -157,14 +280,20 @@ namespace lms::db::tests
         }
 
         {
-            auto transaction{ session.createWriteTransaction() };
-            const auto tracks{ Track::findIds(session, Track::FindParameters{}.setMediaLibrary(library->getId())) };
+            auto transaction{ session.createReadTransaction() };
+            EXPECT_FALSE(library->isEmpty());
+            EXPECT_TRUE(otherLibrary->isEmpty());
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            const auto tracks{ Track::findIds(session, Track::FindParameters{}.setFilters(Filters{}.setMediaLibrary(library->getId()))) };
             ASSERT_EQ(tracks.results.size(), 1);
             EXPECT_EQ(tracks.results.front(), track.getId());
         }
         {
-            auto transaction{ session.createWriteTransaction() };
-            const auto tracks{ Track::findIds(session, Track::FindParameters{}.setMediaLibrary(otherLibrary->getId())) };
+            auto transaction{ session.createReadTransaction() };
+            const auto tracks{ Track::findIds(session, Track::FindParameters{}.setFilters(Filters{}.setMediaLibrary(otherLibrary->getId()))) };
             EXPECT_EQ(tracks.results.size(), 0);
         }
     }
@@ -259,8 +388,8 @@ namespace lms::db::tests
     TEST_F(DatabaseFixture, Track_date)
     {
         ScopedTrack track{ session };
-        const Wt::WDate date{ 1995, 5, 5 };
-        const Wt::WDate originalDate{ 1994, 2, 2 };
+        const core::PartialDateTime date{ 1995, 5, 5 };
+        const core::PartialDateTime originalDate{ 1994, 2, 2 };
         {
             auto transaction{ session.createReadTransaction() };
             EXPECT_EQ(track->getYear(), std::nullopt);
@@ -275,22 +404,16 @@ namespace lms::db::tests
 
         {
             auto transaction{ session.createReadTransaction() };
-            EXPECT_EQ(track->getYear(), std::nullopt);
-            EXPECT_EQ(track->getOriginalYear(), std::nullopt);
+            EXPECT_EQ(track->getYear(), 1995);
+            EXPECT_EQ(track->getOriginalYear(), 1994);
             EXPECT_EQ(track->getDate(), date);
             EXPECT_EQ(track->getOriginalDate(), originalDate);
         }
 
         {
-            auto transaction{ session.createWriteTransaction() };
-            track.get().modify()->setYear(date.year());
-            track.get().modify()->setOriginalYear(originalDate.year());
-        }
-
-        {
             auto transaction{ session.createReadTransaction() };
-            EXPECT_EQ(track->getYear(), date.year());
-            EXPECT_EQ(track->getOriginalYear(), originalDate.year());
+            EXPECT_EQ(track->getYear(), date.getYear());
+            EXPECT_EQ(track->getOriginalYear(), originalDate.getYear());
         }
     }
 
@@ -331,13 +454,11 @@ namespace lms::db::tests
         {
             auto transaction{ session.createWriteTransaction() };
             track.get().modify()->setAbsoluteFilePath("/root/foo/file.path");
-            track.get().modify()->setRelativeFilePath("foo/file.path");
         }
 
         {
             auto transaction{ session.createReadTransaction() };
             EXPECT_EQ(track->getAbsoluteFilePath(), "/root/foo/file.path");
-            EXPECT_EQ(track->getRelativeFilePath(), "foo/file.path");
         }
     }
 
@@ -381,6 +502,93 @@ namespace lms::db::tests
         {
             auto transaction{ session.createReadTransaction() };
             EXPECT_EQ(track->getComment(), "MyComment");
+        }
+    }
+
+    TEST_F(DatabaseFixture, Track_sortDateAdded)
+    {
+        ScopedTrack track1{ session };
+        ScopedTrack track2{ session };
+        ScopedTrack track3{ session };
+        ScopedTrack track4{ session };
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            track1.get().modify()->setAddedTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 2 } });
+            track2.get().modify()->setAddedTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 1 } });
+            track4.get().modify()->setAddedTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 2 }, Wt::WTime{ 15, 36, 24 } });
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            const auto tracks{ Track::findIds(session, Track::FindParameters{}.setSortMethod(TrackSortMethod::AddedDesc)) };
+            ASSERT_EQ(tracks.results.size(), 4);
+            EXPECT_EQ(tracks.results[0], track4.getId());
+            EXPECT_EQ(tracks.results[1], track1.getId());
+            EXPECT_EQ(tracks.results[2], track2.getId());
+            EXPECT_EQ(tracks.results[3], track3.getId());
+        }
+    }
+
+    TEST_F(DatabaseFixture, Track_sortLastWritten)
+    {
+        ScopedTrack track1{ session };
+        ScopedTrack track2{ session };
+        ScopedTrack track3{ session };
+        ScopedTrack track4{ session };
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            track1.get().modify()->setLastWriteTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 2 } });
+            track2.get().modify()->setLastWriteTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 1 } });
+            track4.get().modify()->setLastWriteTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 2 }, Wt::WTime{ 15, 36, 24 } });
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            const auto tracks{ Track::findIds(session, Track::FindParameters{}.setSortMethod(TrackSortMethod::LastWrittenDesc)) };
+            ASSERT_EQ(tracks.results.size(), 4);
+            EXPECT_EQ(tracks.results[0], track4.getId());
+            EXPECT_EQ(tracks.results[1], track1.getId());
+            EXPECT_EQ(tracks.results[2], track2.getId());
+            EXPECT_EQ(tracks.results[3], track3.getId());
+        }
+    }
+
+    TEST_F(DatabaseFixture, Track_updateArtworks)
+    {
+        ScopedTrack track{ session };
+        {
+            auto transaction{ session.createReadTransaction() };
+            EXPECT_EQ(track->getPreferredArtwork(), Artwork::pointer{});
+            EXPECT_EQ(track->getPreferredMediaArtwork(), Artwork::pointer{});
+        }
+
+        ScopedImage image1{ session, "/image1.jpg" };
+        ScopedArtwork artwork1{ session, image1.lockAndGet() };
+        ScopedImage image2{ session, "/image2.jpg" };
+        ScopedArtwork artwork2{ session, image2.lockAndGet() };
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            Track::updatePreferredArtwork(session, track->getId(), artwork1->getId());
+            Track::updatePreferredMediaArtwork(session, track->getId(), artwork2->getId());
+        }
+        {
+            auto transaction{ session.createReadTransaction() };
+            EXPECT_EQ(track->getPreferredArtwork()->getId(), artwork1->getId());
+            EXPECT_EQ(track->getPreferredMediaArtwork()->getId(), artwork2->getId());
+        }
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            Track::updatePreferredArtwork(session, track->getId(), ArtworkId{});
+            Track::updatePreferredMediaArtwork(session, track->getId(), ArtworkId{});
+        }
+        {
+            auto transaction{ session.createReadTransaction() };
+            EXPECT_EQ(track->getPreferredArtwork(), Artwork::pointer{});
+            EXPECT_EQ(track->getPreferredMediaArtwork(), Artwork::pointer{});
         }
     }
 } // namespace lms::db::tests

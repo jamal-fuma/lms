@@ -19,18 +19,19 @@
 
 #include "ScanSettingsView.hpp"
 
+#include <Wt/WCheckBox.h>
 #include <Wt/WComboBox.h>
 #include <Wt/WFormModel.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WString.h>
 #include <Wt/WTemplateFormView.h>
+#include <Wt/WTextArea.h>
 
-#include "core/ILogger.hpp"
 #include "core/Service.hpp"
 #include "core/String.hpp"
-#include "database/ScanSettings.hpp"
 #include "database/Session.hpp"
+#include "database/objects/ScanSettings.hpp"
 #include "services/recommendation/IRecommendationService.hpp"
 #include "services/scanner/IScannerService.hpp"
 
@@ -69,6 +70,10 @@ namespace lms::ui
             static inline constexpr Field UpdatePeriodField{ "update-period" };
             static inline constexpr Field UpdateStartTimeField{ "update-start-time" };
             static inline constexpr Field SimilarityEngineTypeField{ "similarity-engine-type" };
+            static inline constexpr Field SkipSingleReleasePlayListsField{ "skip-single-release-playlists" };
+            static inline constexpr Field AllowMBIDArtistMergeField{ "allow-mbid-artist-merge" };
+            static inline constexpr Field ArtistImageFallbackToReleaseField{ "artist-image-fallback-to-release" };
+            static inline constexpr Field ArtistsToNotSplitField{ "artists-to-not-split" };
 
             using UpdatePeriodModel = ValueStringModel<ScanSettings::UpdatePeriod>;
 
@@ -79,10 +84,17 @@ namespace lms::ui
                 addField(UpdatePeriodField);
                 addField(UpdateStartTimeField);
                 addField(SimilarityEngineTypeField);
+                addField(SkipSingleReleasePlayListsField);
+                addField(AllowMBIDArtistMergeField);
+                addField(ArtistImageFallbackToReleaseField);
+                addField(ArtistsToNotSplitField);
 
                 setValidator(UpdatePeriodField, createMandatoryValidator());
                 setValidator(UpdateStartTimeField, createMandatoryValidator());
                 setValidator(SimilarityEngineTypeField, createMandatoryValidator());
+                setValidator(SkipSingleReleasePlayListsField, createMandatoryValidator());
+                setValidator(AllowMBIDArtistMergeField, createMandatoryValidator());
+                setValidator(ArtistImageFallbackToReleaseField, createMandatoryValidator());
             }
 
             std::shared_ptr<UpdatePeriodModel> updatePeriodModel() { return _updatePeriodModel; }
@@ -93,7 +105,7 @@ namespace lms::ui
             {
                 auto transaction{ LmsApp->getDbSession().createReadTransaction() };
 
-                const ScanSettings::pointer scanSettings{ ScanSettings::get(LmsApp->getDbSession()) };
+                const ScanSettings::pointer scanSettings{ ScanSettings::find(LmsApp->getDbSession()) };
 
                 auto periodRow{ _updatePeriodModel->getRowFromValue(scanSettings->getUpdatePeriod()) };
                 if (periodRow)
@@ -106,8 +118,12 @@ namespace lms::ui
                 if (scanSettings->getUpdatePeriod() == ScanSettings::UpdatePeriod::Hourly
                     || scanSettings->getUpdatePeriod() == ScanSettings::UpdatePeriod::Never)
                 {
-                    setReadOnly(DatabaseSettingsModel::UpdateStartTimeField, true);
+                    setReadOnly(UpdateStartTimeField, true);
                 }
+
+                setValue(SkipSingleReleasePlayListsField, scanSettings->getSkipSingleReleasePlayLists());
+                setValue(AllowMBIDArtistMergeField, scanSettings->getAllowMBIDArtistMerge());
+                setValue(ArtistImageFallbackToReleaseField, scanSettings->getArtistImageFallbackToReleaseField());
 
                 auto similarityEngineTypeRow{ _similarityEngineTypeModel->getRowFromValue(scanSettings->getSimilarityEngineType()) };
                 if (similarityEngineTypeRow)
@@ -118,33 +134,68 @@ namespace lms::ui
                 std::transform(std::cbegin(extraTags), std::cend(extraTags), std::back_inserter(extraTagsToScan), [](std::string_view extraTag) { return std::string{ extraTag }; });
                 artistDelimiters = scanSettings->getArtistTagDelimiters();
                 defaultDelimiters = scanSettings->getDefaultTagDelimiters();
+
+                {
+                    std::string artists{ core::stringUtils::joinStrings(scanSettings->getArtistsToNotSplit(), '\n') };
+                    setValue(ArtistsToNotSplitField, Wt::WString::fromUTF8(std::move(artists)));
+                    if (artistDelimiters.empty())
+                        setReadOnly(ArtistsToNotSplitField, true);
+                }
             }
 
             void saveData(std::span<const std::string_view> extraTagsToScan, std::span<const std::string_view> artistDelimiters, std::span<const std::string_view> defaultDelimiters)
             {
                 auto transaction{ LmsApp->getDbSession().createWriteTransaction() };
 
-                ScanSettings::pointer scanSettings{ ScanSettings::get(LmsApp->getDbSession()) };
+                ScanSettings::pointer scanSettings{ ScanSettings::find(LmsApp->getDbSession()) };
 
-                auto updatePeriodRow{ _updatePeriodModel->getRowFromString(valueText(UpdatePeriodField)) };
-                if (updatePeriodRow)
-                    scanSettings.modify()->setUpdatePeriod(_updatePeriodModel->getValue(*updatePeriodRow));
+                {
+                    const auto updatePeriodRow{ _updatePeriodModel->getRowFromString(valueText(UpdatePeriodField)) };
+                    if (updatePeriodRow)
+                        scanSettings.modify()->setUpdatePeriod(_updatePeriodModel->getValue(*updatePeriodRow));
+                }
 
-                auto startTimeRow{ _updateStartTimeModel->getRowFromString(valueText(UpdateStartTimeField)) };
-                if (startTimeRow)
-                    scanSettings.modify()->setUpdateStartTime(_updateStartTimeModel->getValue(*startTimeRow));
+                {
+                    const auto startTimeRow{ _updateStartTimeModel->getRowFromString(valueText(UpdateStartTimeField)) };
+                    if (startTimeRow)
+                        scanSettings.modify()->setUpdateStartTime(_updateStartTimeModel->getValue(*startTimeRow));
+                }
 
-                auto similarityEngineTypeRow{ _similarityEngineTypeModel->getRowFromString(valueText(SimilarityEngineTypeField)) };
-                if (similarityEngineTypeRow)
-                    scanSettings.modify()->setSimilarityEngineType(_similarityEngineTypeModel->getValue(*similarityEngineTypeRow));
+                {
+                    const bool skipSingleReleasePlayLists{ Wt::asNumber(value(SkipSingleReleasePlayListsField)) != 0 };
+                    scanSettings.modify()->setSkipSingleReleasePlayLists(skipSingleReleasePlayLists);
+                }
+
+                {
+                    const bool allowMBIDArtistMerge{ Wt::asNumber(value(AllowMBIDArtistMergeField)) != 0 };
+                    scanSettings.modify()->setAllowMBIDArtistMerge(allowMBIDArtistMerge);
+                }
+
+                {
+                    const bool artistImageFallbackToRelease{ Wt::asNumber(value(ArtistImageFallbackToReleaseField)) != 0 };
+                    scanSettings.modify()->setArtistImageFallbackToReleaseField(artistImageFallbackToRelease);
+                }
+
+                {
+                    const auto similarityEngineTypeRow{ _similarityEngineTypeModel->getRowFromString(valueText(SimilarityEngineTypeField)) };
+                    if (similarityEngineTypeRow)
+                        scanSettings.modify()->setSimilarityEngineType(_similarityEngineTypeModel->getValue(*similarityEngineTypeRow));
+                }
 
                 scanSettings.modify()->setExtraTagsToScan(extraTagsToScan);
                 scanSettings.modify()->setArtistTagDelimiters(artistDelimiters);
                 scanSettings.modify()->setDefaultTagDelimiters(defaultDelimiters);
+
+                {
+                    const std::string artists{ valueText(ArtistsToNotSplitField).toUTF8() };
+                    std::vector<std::string_view> artistsToNotSplit{ core::stringUtils::splitString(artists, '\n') };
+                    scanSettings.modify()->setArtistsToNotSplit(artistsToNotSplit);
+                }
             }
 
         private:
-            void initializeModels()
+            void
+            initializeModels()
             {
                 _updatePeriodModel = std::make_shared<ValueStringModel<ScanSettings::UpdatePeriod>>();
                 _updatePeriodModel->add(Wt::WString::tr("Lms.Admin.Database.never"), ScanSettings::UpdatePeriod::Never);
@@ -201,8 +252,8 @@ namespace lms::ui
             }
 
             bool validate() { return _model->validate(); }
-            void updateModel() { Wt::WTemplateFormView::updateModel(_model.get()); }
-            void updateView() { Wt::WTemplateFormView::updateView(_model.get()); }
+            void refreshModel() { Wt::WTemplateFormView::updateModel(_model.get()); }
+            void refreshView() { Wt::WTemplateFormView::updateView(_model.get()); }
 
             Wt::WString getValue() const
             {
@@ -220,13 +271,18 @@ namespace lms::ui
             LineEditContainerWidget(std::shared_ptr<Wt::WValidator> validator)
                 : _validator{ validator } {}
 
+            Wt::Signal<std::size_t> sizeChanged;
+
             void add(const Wt::WString& value = "")
             {
                 auto* entry{ addNew<LineEditEntryWidget>(value, _validator) };
 
                 entry->deleted.connect(this, [=, this] {
                     removeWidget(entry);
+                    sizeChanged.emit(count());
                 });
+
+                sizeChanged.emit(count());
             }
 
             bool validate()
@@ -242,21 +298,21 @@ namespace lms::ui
                 return res;
             }
 
-            void updateModels()
+            void refreshModels()
             {
                 for (int i{}; i < count(); ++i)
                 {
                     LineEditEntryWidget* entry{ static_cast<LineEditEntryWidget*>(widget(i)) };
-                    entry->updateModel();
+                    entry->refreshModel();
                 }
             }
 
-            void updateViews()
+            void refreshViews()
             {
                 for (int i{}; i < count(); ++i)
                 {
                     LineEditEntryWidget* entry{ static_cast<LineEditEntryWidget*>(widget(i)) };
-                    entry->updateView();
+                    entry->refreshView();
                 }
             }
 
@@ -299,7 +355,7 @@ namespace lms::ui
 
         clear();
 
-        auto t{ addNew<Wt::WTemplateFormView>(Wt::WString::tr("Lms.Admin.Database.template")) };
+        auto* t{ addNew<Wt::WTemplateFormView>(Wt::WString::tr("Lms.Admin.Database.template")) };
         auto model{ std::make_shared<DatabaseSettingsModel>() };
 
         // Update Period
@@ -317,6 +373,15 @@ namespace lms::ui
         auto updateStartTime{ std::make_unique<Wt::WComboBox>() };
         updateStartTime->setModel(model->updateStartTimeModel());
         t->setFormWidget(DatabaseSettingsModel::UpdateStartTimeField, std::move(updateStartTime));
+
+        // Skip playlists
+        t->setFormWidget(DatabaseSettingsModel::SkipSingleReleasePlayListsField, std::make_unique<Wt::WCheckBox>());
+
+        // Allow to merge artists without MBID with those with one
+        t->setFormWidget(DatabaseSettingsModel::AllowMBIDArtistMergeField, std::make_unique<Wt::WCheckBox>());
+
+        // Allow to fallback on release image if artist image is not available
+        t->setFormWidget(DatabaseSettingsModel::ArtistImageFallbackToReleaseField, std::make_unique<Wt::WCheckBox>());
 
         // Similarity engine type
         auto similarityEngineType{ std::make_unique<Wt::WComboBox>() };
@@ -346,6 +411,12 @@ namespace lms::ui
             });
         }
 
+        t->setFormWidget(DatabaseSettingsModel::ArtistsToNotSplitField, std::make_unique<Wt::WTextArea>());
+        artistTagDelimiters->sizeChanged.connect(this, [=](std::size_t newSize) {
+            model->setReadOnly(DatabaseSettingsModel::ArtistsToNotSplitField, newSize == 0);
+            t->updateView(model.get());
+        });
+
         // Default tag delimiter
         auto* defaultTagDelimiters{ t->bindNew<LineEditContainerWidget>("default-tag-delimiter-container", tagDelimiterValidator) };
         {
@@ -372,16 +443,16 @@ namespace lms::ui
 
         auto updateModels{ [=] {
             t->updateModel(model.get());
-            extraTagsToScan->updateModels();
-            artistTagDelimiters->updateModels();
-            defaultTagDelimiters->updateModels();
+            extraTagsToScan->refreshModels();
+            artistTagDelimiters->refreshModels();
+            defaultTagDelimiters->refreshModels();
         } };
 
         auto updateViews{ [=] {
             t->updateView(model.get());
-            extraTagsToScan->updateViews();
-            artistTagDelimiters->updateViews();
-            defaultTagDelimiters->updateViews();
+            extraTagsToScan->refreshViews();
+            artistTagDelimiters->refreshViews();
+            defaultTagDelimiters->refreshViews();
         } };
 
         auto loadInitialData{ [=] {
@@ -392,7 +463,7 @@ namespace lms::ui
 
             extraTagsToScan->clear();
             for (const std::string& extraTag : extraTags)
-                extraTagsToScan->add(Wt::WString::fromUTF8(std::string{ extraTag }));
+                extraTagsToScan->add(Wt::WString::fromUTF8(extraTag));
 
             artistTagDelimiters->clear();
             for (const std::string& artistDelimiter : artistDelimiters)

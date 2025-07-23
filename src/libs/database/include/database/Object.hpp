@@ -20,15 +20,19 @@
 #pragma once
 
 #include <Wt/Dbo/ptr.h>
-#include <Wt/WSignal.h>
 
 #include "database/IdType.hpp"
-#include "database/TransactionChecker.hpp"
 
 namespace lms::db
 {
+    class ObjectPtrBase
+    {
+    protected:
+        static void checkWriteTransaction(Wt::Dbo::Session& session);
+    };
+
     template<typename T>
-    class ObjectPtr
+    class ObjectPtr : public ObjectPtrBase
     {
     public:
         ObjectPtr() = default;
@@ -45,20 +49,13 @@ namespace lms::db
 
         auto modify()
         {
-#if LMS_CHECK_TRANSACTION_ACCESSES
-            TransactionChecker::checkWriteTransaction(*_obj.session());
-#endif
+            checkWriteTransaction(*_obj.session());
             return _obj.modify();
         }
 
         void remove()
         {
-#if LMS_CHECK_TRANSACTION_ACCESSES
-            TransactionChecker::checkWriteTransaction(*_obj.session());
-#endif
-
-            if (_obj->hasOnPreRemove())
-                _obj.modify()->onPreRemove();
+            checkWriteTransaction(*_obj.session());
             _obj.remove();
         }
 
@@ -86,12 +83,6 @@ namespace lms::db
     protected:
         template<typename>
         friend class ObjectPtr;
-
-        virtual bool hasOnPreRemove() const { return false; }
-        virtual void onPreRemove() {}
-
-        virtual bool hasOnPostCreated() const { return false; }
-        virtual void onPostCreated() {}
 
         // Can get raw dbo ptr only from Objects
         template<typename SomeObject>

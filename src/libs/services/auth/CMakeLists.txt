@@ -1,5 +1,5 @@
 
-add_library(lmsauth SHARED
+add_library(lmsauth STATIC
 	impl/AuthTokenService.cpp
 	impl/AuthServiceBase.cpp
 	impl/EnvService.cpp
@@ -18,14 +18,11 @@ target_include_directories(lmsauth PRIVATE
 	impl
 	)
 
-target_link_libraries(lmsauth PRIVATE
-	lmscore
-	lmsdatabase
-	)
-
 target_link_libraries(lmsauth PUBLIC
 	Boost::system
 	Wt::Wt
+	lmscore
+	lmsdatabase
 	)
 	
 # PAM
@@ -50,6 +47,3 @@ if (USE_PAM)
 	target_include_directories(lmsauth PRIVATE  ${PAM_INCLUDE_DIR})
 	target_link_libraries(lmsauth PRIVATE ${PAM_LIBRARIES})
 endif (USE_PAM)
-
-install(TARGETS lmsauth DESTINATION ${CMAKE_INSTALL_LIBDIR})
-

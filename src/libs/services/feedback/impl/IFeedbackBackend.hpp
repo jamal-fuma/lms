@@ -19,9 +19,11 @@
 
 #pragma once
 
-#include "database/StarredArtistId.hpp"
-#include "database/StarredReleaseId.hpp"
-#include "database/StarredTrackId.hpp"
+#include <memory>
+
+#include "database/objects/StarredArtistId.hpp"
+#include "database/objects/StarredReleaseId.hpp"
+#include "database/objects/StarredTrackId.hpp"
 
 namespace lms::feedback
 {
@@ -30,12 +32,12 @@ namespace lms::feedback
     public:
         virtual ~IFeedbackBackend() = default;
 
-        virtual void onStarred(db::StarredArtistId) = 0;
-        virtual void onUnstarred(db::StarredArtistId) = 0;
-        virtual void onStarred(db::StarredReleaseId) = 0;
-        virtual void onUnstarred(db::StarredReleaseId) = 0;
-        virtual void onStarred(db::StarredTrackId) = 0;
-        virtual void onUnstarred(db::StarredTrackId) = 0;
+        virtual void onStarred(db::StarredArtistId artistId) = 0;
+        virtual void onUnstarred(db::StarredArtistId artistId) = 0;
+        virtual void onStarred(db::StarredReleaseId releaseId) = 0;
+        virtual void onUnstarred(db::StarredReleaseId releaseId) = 0;
+        virtual void onStarred(db::StarredTrackId trackId) = 0;
+        virtual void onUnstarred(db::StarredTrackId trackId) = 0;
     };
 
     std::unique_ptr<IFeedbackBackend> createFeedbackBackend(std::string_view backendName);

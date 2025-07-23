@@ -21,41 +21,39 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 
-#include "database/ArtistId.hpp"
-#include "database/ReleaseId.hpp"
-#include "database/TrackId.hpp"
+#include "database/objects/ArtworkId.hpp"
+#include "database/objects/TrackListId.hpp"
 #include "image/IEncodedImage.hpp"
 
 namespace lms::db
 {
-    class Db;
+    class IDb;
 }
 
-namespace lms::cover
+namespace lms::artwork
 {
     class IArtworkService
     {
     public:
         virtual ~IArtworkService() = default;
 
-        virtual std::shared_ptr<image::IEncodedImage> getArtistImage(db::ArtistId artistId, image::ImageSize width) = 0;
+        // Helpers to get preferred artworks
+        virtual db::ArtworkId findTrackListImage(db::TrackListId trackListId) = 0;
 
-        // no logic to fallback to release here
-        virtual std::shared_ptr<image::IEncodedImage> getTrackImage(db::TrackId trackId, image::ImageSize width) = 0;
+        // Image retrieval, no width means original size
+        virtual std::shared_ptr<image::IEncodedImage> getImage(db::ArtworkId artworkId, std::optional<image::ImageSize> width) = 0;
 
-        // no logic to fallback to track here
-        virtual std::shared_ptr<image::IEncodedImage> getReleaseCover(db::ReleaseId releaseId, image::ImageSize width) = 0;
-
-        // Svg images dont have image "size"
-        virtual std::shared_ptr<image::IEncodedImage> getDefaultReleaseCover() = 0;
-        virtual std::shared_ptr<image::IEncodedImage> getDefaultArtistImage() = 0;
+        // Svg images don't have image "size"
+        virtual std::shared_ptr<image::IEncodedImage> getDefaultReleaseArtwork() = 0;
+        virtual std::shared_ptr<image::IEncodedImage> getDefaultArtistArtwork() = 0;
 
         virtual void flushCache() = 0;
 
         virtual void setJpegQuality(unsigned quality) = 0; // from 1 to 100
     };
 
-    std::unique_ptr<IArtworkService> createArtworkService(db::Db& db, const std::filesystem::path& defaultSvgCoverPath, const std::filesystem::path& defaultArtistImageSvgPath);
+    std::unique_ptr<IArtworkService> createArtworkService(db::IDb& db, const std::filesystem::path& defaultReleaseCoverSvgPath, const std::filesystem::path& defaultArtistImageSvgPath);
 
-} // namespace lms::cover
+} // namespace lms::artwork

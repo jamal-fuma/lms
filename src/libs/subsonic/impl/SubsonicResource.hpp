@@ -25,15 +25,13 @@
 #include <Wt/Http/Response.h>
 #include <Wt/WResource.h>
 
-#include "database/Types.hpp"
-#include "database/UserId.hpp"
+#include "database/objects/UserId.hpp"
 
-#include "ClientInfo.hpp"
 #include "RequestContext.hpp"
 
 namespace lms::db
 {
-    class Db;
+    class IDb;
 }
 
 namespace lms::api::subsonic
@@ -41,21 +39,20 @@ namespace lms::api::subsonic
     class SubsonicResource final : public Wt::WResource
     {
     public:
-        SubsonicResource(db::Db& db);
+        SubsonicResource(db::IDb& db);
 
     private:
         void handleRequest(const Wt::Http::Request& request, Wt::Http::Response& response) override;
         ProtocolVersion getServerProtocolVersion(const std::string& clientName) const;
 
         static void checkProtocolVersion(ProtocolVersion client, ProtocolVersion server);
-        ClientInfo getClientInfo(const Wt::Http::Request& request);
         RequestContext buildRequestContext(const Wt::Http::Request& request);
-        db::UserId authenticateUser(const Wt::Http::Request& request, const ClientInfo& clientInfo);
+        db::UserId authenticateUser(const Wt::Http::Request& request);
 
         const std::unordered_map<std::string, ProtocolVersion> _serverProtocolVersionsByClient;
         const std::unordered_set<std::string> _openSubsonicDisabledClients;
-        const std::unordered_set<std::string> _defaultReleaseCoverClients;
+        const bool _supportUserPasswordAuthentication;
 
-        db::Db& _db;
+        db::IDb& _db;
     };
 } // namespace lms::api::subsonic

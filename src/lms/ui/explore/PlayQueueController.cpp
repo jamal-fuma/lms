@@ -19,10 +19,9 @@
 
 #include "explore/PlayQueueController.hpp"
 
-#include "database/ClusterId.hpp"
-#include "database/Release.hpp"
 #include "database/Session.hpp"
-#include "database/Track.hpp"
+#include "database/objects/Release.hpp"
+#include "database/objects/Track.hpp"
 
 #include "LmsApplication.hpp"
 #include "PlayQueue.hpp"
@@ -45,8 +44,7 @@ namespace lms::ui
                 db::Track::FindParameters params;
                 params.setArtist(artistId);
                 params.setSortMethod(db::TrackSortMethod::DateDescAndRelease);
-                params.setClusters(filters.getClusters());
-                params.setMediaLibrary(filters.getMediaLibrary());
+                params.setFilters(filters.getDbFilters());
                 params.setRange(db::Range{ 0, maxTrackCount - res.size() });
 
                 const auto tracks{ db::Track::findIds(session, params) };
@@ -75,8 +73,7 @@ namespace lms::ui
                 db::Track::FindParameters params;
                 params.setRelease(releaseId);
                 params.setSortMethod(db::TrackSortMethod::Release);
-                params.setClusters(filters.getClusters());
-                params.setMediaLibrary(filters.getMediaLibrary());
+                params.setFilters(filters.getDbFilters());
                 params.setRange(db::Range{ 0, maxTrackCount - res.size() });
 
                 const auto tracks{ db::Track::findIds(session, params) };
@@ -106,8 +103,7 @@ namespace lms::ui
                 params.setRelease(disc.releaseId);
                 params.setSortMethod(db::TrackSortMethod::Release);
                 params.setDiscNumber(disc.discNumber);
-                params.setClusters(filters.getClusters());
-                params.setMediaLibrary(filters.getMediaLibrary());
+                params.setFilters(filters.getDbFilters());
                 params.setRange(db::Range{ 0, maxTrackCount - res.size() });
 
                 const auto tracks{ db::Track::findIds(session, params) };
@@ -131,8 +127,7 @@ namespace lms::ui
 
             db::Track::FindParameters params;
             params.setTrackList(trackListId);
-            params.setClusters(filters.getClusters());
-            params.setMediaLibrary(filters.getMediaLibrary());
+            params.setFilters(filters.getDbFilters());
             params.setRange(db::Range{ 0, maxTrackCount });
             params.setSortMethod(TrackSortMethod::TrackList);
 

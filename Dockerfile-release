@@ -1,8 +1,8 @@
-FROM	alpine:3.19 AS build
+FROM	alpine:3.22 AS build
 
 WORKDIR	/tmp/workdir
 
-ARG	PREFIX="/tmp/install"
+ENV	PREFIX="/tmp/install"
 
 ARG	BUILD_PACKAGES=" \
 	ca-certificates \
@@ -32,12 +32,13 @@ ARG	BUILD_PACKAGES=" \
 	libconfig-dev \
 	utfcpp \
 	sqlite-dev \
-	gtest-dev"
+	gtest-dev \
+	xxhash-dev"
 
 RUN	apk add --no-cache --update ${BUILD_PACKAGES}
 
 # ffmpeg
-ARG	FFMPEG_VERSION=6.1.1
+ARG	FFMPEG_VERSION=6.1.2
 RUN  \
 	DIR=/tmp/ffmpeg && mkdir -p ${DIR} && cd ${DIR} && \
 	curl -sLO https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.bz2 && \
@@ -73,13 +74,13 @@ RUN \
 	--enable-muxer=ogg,matroska,mp3,webm \
 	--enable-protocol=file,pipe \
 	--enable-filter=aresample \
+	--enable-lto \
 	--extra-libs=-ldl && \
-	make -j$(nproc) && \
-	make install && \
-	make distclean
+	make -j$(nproc) install 
 
 # WT
-ARG	WT_VERSION=4.10.4
+ARG	WT_VERSION=4.11.4
+ARG WT_DEBUG=OFF
 RUN \
 	DIR=/tmp/wt && mkdir -p ${DIR} && cd ${DIR} && \
 	curl -sLO https://github.com/emweb/wt/archive/${WT_VERSION}.tar.gz && \
@@ -87,12 +88,11 @@ RUN \
 
 RUN \
 	DIR=/tmp/wt && mkdir -p ${DIR} && cd ${DIR} && \
-	cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${PREFIX} -DBUILD_EXAMPLES=OFF -DENABLE_LIBWTTEST=OFF -DCONNECTOR_FCGI=OFF -DUSE_SYSTEM_SQLITE3=ON && \
-	make -j$(nproc) && \
-	make install
+	cmake -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=TRUE -DCMAKE_CXX_STANDARD=17 -DSHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${PREFIX} -DBUILD_EXAMPLES=OFF -DENABLE_LIBWTTEST=OFF -DCONNECTOR_FCGI=OFF -DUSE_SYSTEM_SQLITE3=ON -DDEBUG=${WT_DEBUG} && \
+	make -j$(nproc) install 
 
 # STB
-ARG	STB_VERSION=ae721c50eaf761660b4f90cc590453cdb0c2acd0
+ARG	STB_VERSION=5c205738c191bcb0abc65c4febfa9bd25ff35234
 RUN \
 	DIR=/tmp/stb && mkdir -p ${DIR} && cd ${DIR} && \
 	curl -sLO https://github.com/nothings/stb/archive/${STB_VERSION}.tar.gz && \
@@ -101,7 +101,7 @@ RUN \
 	cp ./*.h ${PREFIX}/include/stb
 
 # TAGLIB
-ARG TAGLIB_VERSION=v2.0.1
+ARG TAGLIB_VERSION=v2.1.1
 RUN \
 	DIR=/tmp/taglib && mkdir -p ${DIR} && cd ${DIR} && \
 	curl -sLO https://github.com/taglib/taglib/archive/${TAGLIB_VERSION}.tar.gz && \
@@ -109,18 +109,16 @@ RUN \
 
 RUN \
 	DIR=/tmp/taglib && mkdir -p ${DIR} && cd ${DIR} && \
-	CXXFLAGS="-I/usr/include/utf8cpp" cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${PREFIX} -DBUILD_SHARED_LIBS=ON -DBUILD_EXAMPLES=OFF -DBUILD_BINDINGS=OFF -DBUILD_TESTING=OFF -DTRACE_IN_RELEASE=OFF -DWITH_ZLIB=ON  && \
-	make -j$(nproc) && \
-	make install
+	CXXFLAGS="-I/usr/include/utf8cpp" cmake -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=TRUE -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${PREFIX} -DBUILD_SHARED_LIBS=ON -DBUILD_EXAMPLES=OFF -DBUILD_BINDINGS=OFF -DBUILD_TESTING=OFF -DTRACE_IN_RELEASE=OFF -DWITH_ZLIB=ON  && \
+	make -j$(nproc) install
 
 # LMS
 COPY . /tmp/lms/
 RUN \
 	DIR=/tmp/lms/build && mkdir -p ${DIR} && cd ${DIR} && \
-	PKG_CONFIG_PATH=/tmp/install/lib/pkgconfig CXXFLAGS="-I${PREFIX}/include" LDFLAGS="-L${PREFIX}/lib -Wl,--rpath-link=${PREFIX}/lib" cmake /tmp/lms/ -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${PREFIX} -DCMAKE_PREFIX_PATH=${PREFIX} && \
-	LD_LIBRARY_PATH=${PREFIX}/lib VERBOSE=1 make -j$(nproc) && \
+	PKG_CONFIG_PATH=/tmp/install/lib/pkgconfig CXXFLAGS="-I${PREFIX}/include" LDFLAGS="-L${PREFIX}/lib -Wl,--rpath-link=${PREFIX}/lib" cmake /tmp/lms/ -DCMAKE_BUILD_TYPE=Release -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=TRUE -DCMAKE_UNITY_BUILD=ON -DCMAKE_INSTALL_PREFIX=${PREFIX} -DCMAKE_PREFIX_PATH=${PREFIX} && \
+	LD_LIBRARY_PATH=${PREFIX}/lib make -j$(nproc) install && \
 	LD_LIBRARY_PATH=${PREFIX}/lib make test && \
-	make install && \
 	mkdir -p ${PREFIX}/etc/ && \
 	cp /tmp/lms/conf/lms.conf ${PREFIX}/etc
 
@@ -147,7 +145,7 @@ RUN \
 	rm -rf /tmp/fakeroot/share/Wt/resources/themes
 
 ## Release Stage
-FROM		alpine:3.19 AS release
+FROM		alpine:3.22 AS release
 LABEL		maintainer="Emeric Poupon <itmfr@yahoo.fr>"
 
 ARG	RUNTIME_PACKAGES=" \
@@ -163,7 +161,6 @@ ARG	RUNTIME_PACKAGES=" \
 	boost-filesystem \
 	boost-iostreams \
 	boost-program_options \
-	boost-system \
 	boost-thread \
 	libarchive \
 	libconfig++ \

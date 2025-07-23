@@ -34,6 +34,7 @@
 
 <message id="Lms.user">用户</message>
 
+
 <!--Locale-->
 <message id="Lms.locale.decimal-point">.</message>
 <message id="Lms.locale.group-separator">,</message>
@@ -73,11 +74,14 @@
 
 <!--Scan settings-->
 
+
+
 <message id="Lms.Admin.Database.daily">每日</message>
 
 
 <message id="Lms.Admin.Database.hourly">每小时</message>
 <message id="Lms.Admin.Database.immediate-scan">立即扫描！</message>
+
 <message id="Lms.Admin.Database.monthly">每月</message>
 <message id="Lms.Admin.Database.never">从不</message>
 
@@ -88,15 +92,20 @@
 
 
 
+
+
 <message id="Lms.Admin.Database.update-period">更新周期</message>
 <message id="Lms.Admin.Database.update-start-time">更新开始时间</message>
 <message id="Lms.Admin.Database.weekly">每周</message>
 
 <!--Scanner Controller-->
 <message id="Lms.Admin.ScannerController.bad-duration">无法获得音轨时间</message>
+
+
 <message id="Lms.Admin.ScannerController.cannot-read-audio-file">无法解析文件</message>
 
-<message id="Lms.Admin.ScannerController.cannot-read-file">无法读取文件</message>
+<message id="Lms.Admin.ScannerController.cannot-read-file">无法读取文件 ({1})</message>
+
 
 
 <message id="Lms.Admin.ScannerController.duplicates-header">{1} 个重复文件：</message>
@@ -107,6 +116,9 @@
 <message id="Lms.Admin.ScannerController.last-scan">最后扫描</message>
 <message id="Lms.Admin.ScannerController.last-scan-not-available">不可用</message>
 <message id="Lms.Admin.ScannerController.last-scan-status">已扫描 {1} 个文件，用时 {2}，在 {3} 的 {4} (UTC) - {5} 个错误，{6} 个重复项</message>
+
+
+
 <message id="Lms.Admin.ScannerController.no-audio-track">没有音轨</message>
 <message id="Lms.Admin.ScannerController.same-hash">相同文件哈希值</message>
 <message id="Lms.Admin.ScannerController.same-mbid">相同 MBID</message>
@@ -121,16 +133,23 @@
 
 
 
+
 <message id="Lms.Admin.ScannerController.step-checking-for-removed-files">检查文件中... {1}%</message>
 
 
-<message id="Lms.Admin.ScannerController.step-discovering-files">检索文件中: {1} 文件</message>
 <message id="Lms.Admin.ScannerController.step-fetching-track-features">从 AcousticBrainz 获取音轨特征: {1}/{2} 音轨 ({3}%)...</message>
+
 
 <message id="Lms.Admin.ScannerController.step-reloading-similarity-engine">重载相似引擎中 {1}%...</message>
 
-<message id="Lms.Admin.ScannerController.step-scanning-files">扫描文件中: {1}/{2} 个文件 ({3}%)...</message>
+
 <message id="Lms.Admin.ScannerController.step-status">当前步骤状态</message>
+
+<!--Debug Tools-->
+
+
+<!--Db-->
+
 
 
 <!--Tracing-->
@@ -173,6 +192,7 @@
 <message id="Lms.Explore.filter-added">过滤器已添加</message>
 <message id="Lms.Explore.filters">过滤器</message>
 
+
 <message id="Lms.Explore.most-played">播放最多</message>
 <message id="Lms.Explore.musicbrainz-artist">MusicBrainz 歌手</message>
 <message id="Lms.Explore.musicbrainz-release">MusicBrainz 专辑</message>
@@ -185,6 +205,7 @@
 <message id="Lms.Explore.recently-added">最近添加</message>
 <message id="Lms.Explore.recently-modified">最近更改</message>
 <message id="Lms.Explore.recently-played">最近播放</message>
+
 
 <message id="Lms.Explore.releases">专辑</message>
 <message id="Lms.Explore.search">搜索</message>
@@ -201,6 +222,7 @@
 
 <!--Explore:Artist-->
 <message id="Lms.Explore.Artist.appears-on">出现于</message>
+
 <message id="Lms.Explore.Artist.similar-artists">相似歌手</message>
 
 <!--Explore:Artists-->
@@ -243,9 +265,10 @@
 
 
 <!--Explore:Release-->
-<message id="Lms.Explore.Release.similar-releases">相似专辑</message>
 <message id="Lms.Explore.Release.copyright">版权所有</message>
 <message id="Lms.Explore.Release.disc">唱片 {1}</message>
+
+<message id="Lms.Explore.Release.similar-releases">相似专辑</message>
 
 
 
@@ -268,6 +291,8 @@
 <!--Explore:TrackLists-->
 <message id="Lms.Explore.TrackLists.del-tracklist-confirm">删除播放列表？</message>
 
+
+
 <!--Explore:Search-->
 <message id="Lms.Explore.Search.search-placeholder">搜索...</message>
 
@@ -289,7 +314,7 @@
 <!--Settings-->
 
 <message id="Lms.Settings.audio">音频</message>
-<message id="Lms.Settings.audio-settings-are-local">这些音频设置仅保存在您的本地浏览器！</message>
+<message id="Lms.Settings.audio-settings-are-local">这些音频设置仅保存在您的本地浏览器</message>
 
 
 
@@ -301,12 +326,15 @@
 <message id="Lms.Settings.demo-cannot-save">使用演示账号时不能保存！</message>
 
 
+
+
 <message id="Lms.Settings.menu-settings"><i class="fa fa-fw fa-cog" aria-hidden="true"></i> 设置</message>
 
 
 
 <message id="Lms.Settings.password-bad">无效密码</message>
 <message id="Lms.Settings.password-must-fill-old-password">必须填写旧密码</message>
+
 <message id="Lms.Settings.replaygain-mode">ReplayGain 模式</message>
 <message id="Lms.Settings.replaygain-mode.none">没有 ReplayGain</message>
 <message id="Lms.Settings.replaygain-mode.auto">自动模式</message>
@@ -317,13 +345,19 @@
 
 
 
+<message id="Lms.Settings.settings-saved">新设置已保存！</message>
 <message id="Lms.Settings.subsonic-artist-list-mode">歌手列表模式</message>
 <message id="Lms.Settings.subsonic-artist-list-mode.all-artists">所有歌手</message>
 <message id="Lms.Settings.subsonic-artist-list-mode.release-artists">专辑歌手</message>
 <message id="Lms.Settings.subsonic-artist-list-mode.track-artists">音轨歌手</message>
 <message id="Lms.Settings.subsonic-api">Subsonic 应用程序接口</message>
 
+
 <message id="Lms.Settings.transcoding">转码</message>
+<message id="Lms.Settings.transcoding-mode">启动转码</message>
+<message id="Lms.Settings.transcoding-mode.always">总是</message>
+<message id="Lms.Settings.transcoding-mode.if-format-not-supported">仅当格式不支持时使用</message>
+<message id="Lms.Settings.transcoding-mode.never">从不</message>
 <message id="Lms.Settings.transcoding-output-bitrate">转码比特率</message>
 <message id="Lms.Settings.transcoding-output-format">转码格式</message>
 <message id="Lms.Settings.transcoding-output-format.matroska_opus">Matroska/Opus</message>
@@ -331,11 +365,7 @@
 <message id="Lms.Settings.transcoding-output-format.ogg_opus">Ogg/Opus</message>
 <message id="Lms.Settings.transcoding-output-format.ogg_vorbis">Ogg/Vorbis</message>
 <message id="Lms.Settings.transcoding-output-format.webm_vorbis">WebM/Vorbis</message>
-<message id="Lms.Settings.transcoding-mode">启动转码</message>
-<message id="Lms.Settings.transcoding-mode.always">总是</message>
-<message id="Lms.Settings.transcoding-mode.if-format-not-supported">仅当格式不支持时使用</message>
-<message id="Lms.Settings.transcoding-mode.never">从不</message>
-<message id="Lms.Settings.settings-saved">新设置已保存！</message>
+
 
 <!--Wt-->
 <message id="Wt.WMessageBox.Yes">是</message>

@@ -21,13 +21,12 @@
 
 #include <memory>
 
-#include "database/TrackListId.hpp"
-#include "database/Types.hpp"
+#include "database/objects/TrackListId.hpp"
 #include "services/recommendation/Types.hpp"
 
 namespace lms::db
 {
-    class Db;
+    class IDb;
 }
 
 namespace lms::recommendation
@@ -42,5 +41,5 @@ namespace lms::recommendation
         virtual TrackContainer extendPlaylist(db::TrackListId tracklistId, std::size_t maxCount) const = 0;
     };
 
-    std::unique_ptr<IPlaylistGeneratorService> createPlaylistGeneratorService(db::Db& db, IRecommendationService& recommandationService);
+    std::unique_ptr<IPlaylistGeneratorService> createPlaylistGeneratorService(db::IDb& db, IRecommendationService& recommendationService);
 } // namespace lms::recommendation

@@ -1,5 +1,5 @@
 
-add_library(lmsrecommendation SHARED
+add_library(lmsrecommendation STATIC
 	impl/clusters/ClustersEngine.cpp
 	impl/features/FeaturesEngineCache.cpp
 	impl/features/FeaturesEngine.cpp
@@ -21,10 +21,11 @@ target_include_directories(lmsrecommendation PRIVATE
 	)
 
 target_link_libraries(lmsrecommendation PRIVATE
-	lmsdatabase
+
 	lmssom
 	std::filesystem
 	)
 
-install(TARGETS lmsrecommendation DESTINATION ${CMAKE_INSTALL_LIBDIR})
-
+target_link_libraries(lmsrecommendation PUBLIC
+	lmsdatabase
+	)

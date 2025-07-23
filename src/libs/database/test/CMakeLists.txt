@@ -1,6 +1,9 @@
 
 add_executable(test-database
 	Artist.cpp
+	ArtistInfo.cpp
+	Artwork.cpp
+	AuthToken.cpp
 	Cluster.cpp
 	Common.cpp
 	DatabaseTest.cpp
@@ -8,15 +11,19 @@ add_executable(test-database
 	Image.cpp
 	Listen.cpp
 	Migration.cpp
+	PlayListFile.cpp
 	RatedArtist.cpp
 	RatedRelease.cpp
 	RatedTrack.cpp
 	Release.cpp
+	ScanSettings.cpp
 	StarredArtist.cpp
 	StarredRelease.cpp
 	StarredTrack.cpp
 	Track.cpp
+	TrackArtistLink.cpp
 	TrackBookmark.cpp
+	TrackEmbeddedImage.cpp
 	TrackFeatures.cpp
 	TrackList.cpp
 	TrackLyrics.cpp

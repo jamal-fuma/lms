@@ -27,7 +27,7 @@
 
 namespace lms::db
 {
-    class Db;
+    class IDb;
     class Session;
 } // namespace lms::db
 
@@ -36,15 +36,13 @@ namespace lms::auth
     class PasswordServiceBase : public IPasswordService, public AuthServiceBase
     {
     public:
-        PasswordServiceBase(db::Db& db, std::size_t maxThrottlerEntries, IAuthTokenService& authTokenService);
+        PasswordServiceBase(db::IDb& db, std::size_t maxThrottlerEntries);
 
+        ~PasswordServiceBase() override = default;
         PasswordServiceBase(const PasswordServiceBase&) = delete;
         PasswordServiceBase& operator=(const PasswordServiceBase&) = delete;
         PasswordServiceBase(PasswordServiceBase&&) = delete;
         PasswordServiceBase& operator=(PasswordServiceBase&&) = delete;
-
-    protected:
-        IAuthTokenService& getAuthTokenService() { return _authTokenService; }
 
     private:
         virtual bool checkUserPassword(std::string_view loginName, std::string_view password) = 0;
@@ -55,6 +53,5 @@ namespace lms::auth
 
         std::shared_mutex _mutex;
         LoginThrottler _loginThrottler;
-        IAuthTokenService& _authTokenService;
     };
 } // namespace lms::auth

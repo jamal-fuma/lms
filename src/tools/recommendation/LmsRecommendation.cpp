@@ -19,7 +19,6 @@
 
 #include <filesystem>
 #include <iostream>
-#include <stdexcept>
 #include <stdlib.h>
 
 #include <boost/program_options.hpp>
@@ -28,13 +27,13 @@
 #include "core/Service.hpp"
 #include "core/StreamLogger.hpp"
 #include "core/SystemPaths.hpp"
-#include "database/Artist.hpp"
-#include "database/Cluster.hpp"
-#include "database/Db.hpp"
-#include "database/Release.hpp"
+#include "database/IDb.hpp"
 #include "database/Session.hpp"
-#include "database/Track.hpp"
 #include "database/Types.hpp"
+#include "database/objects/Artist.hpp"
+#include "database/objects/Cluster.hpp"
+#include "database/objects/Release.hpp"
+#include "database/objects/Track.hpp"
 #include "services/recommendation/IRecommendationService.hpp"
 
 namespace lms
@@ -59,9 +58,9 @@ namespace lms
                 res += track->getName();
                 if (track->getRelease())
                     res += " [" + std::string{ track->getRelease()->getName() } + "]";
-                for (auto artist : track->getArtists({ TrackArtistLinkType::Artist }))
+                for (const auto& artist : track->getArtists({ TrackArtistLinkType::Artist }))
                     res += " - " + artist->getName();
-                for (auto cluster : track->getClusters())
+                for (const auto& cluster : track->getClusters())
                     res += " {" + std::string{ cluster->getType()->getName() } + "-" + std::string{ cluster->getName() } + "}";
 
                 return res;
@@ -146,11 +145,11 @@ int main(int argc, char* argv[])
 
         core::Service<core::IConfig> config{ core::createConfig(vm["conf"].as<std::string>()) };
 
-        Db db{ config->getPath("working-dir") / "lms.db" };
-        Session session{ db };
+        auto db{ db::createDb(config->getPath("working-dir", "/var/lms") / "lms.db") };
+        Session session{ *db };
 
         std::cout << "Creating recommendation service..." << std::endl;
-        const auto recommendationService{ recommendation::createRecommendationService(db) };
+        const auto recommendationService{ recommendation::createRecommendationService(*db) };
         std::cout << "Recommendation service created!" << std::endl;
 
         std::cout << "Loading recommendation service..." << std::endl;
@@ -161,13 +160,13 @@ int main(int argc, char* argv[])
         std::cout << "Recommendation service loaded!" << std::endl;
 
         if (vm.count("tracks"))
-            dumpTracksRecommendation(db, *recommendationService, maxSimilarityCount);
+            dumpTracksRecommendation(*db, *recommendationService, maxSimilarityCount);
 
         if (vm.count("releases"))
-            dumpReleasesRecommendation(db, *recommendationService, maxSimilarityCount);
+            dumpReleasesRecommendation(*db, *recommendationService, maxSimilarityCount);
 
         if (vm.count("artists"))
-            dumpArtistsRecommendation(db, *recommendationService, maxSimilarityCount);
+            dumpArtistsRecommendation(*db, *recommendationService, maxSimilarityCount);
     }
     catch (std::exception& e)
     {

@@ -19,26 +19,23 @@
 
 #pragma once
 
-#include <optional>
 #include <string_view>
 
 #include <Wt/Dbo/ptr.h>
 #include <Wt/WDateTime.h>
 #include <boost/asio/ip/address.hpp>
 
-#include "database/UserId.hpp"
+#include "database/objects/UserId.hpp"
 #include "services/auth/Types.hpp"
 
 namespace lms::db
 {
-    class Db;
+    class IDb;
     class User;
 } // namespace lms::db
 
 namespace lms::auth
 {
-    class IAuthTokenService;
-
     class IPasswordService
     {
     public:
@@ -53,8 +50,7 @@ namespace lms::auth
                 Throttled,
             };
             State state{ State::Denied };
-            std::optional<db::UserId> userId{};
-            std::optional<Wt::WDateTime> expiry{};
+            db::UserId userId{};
         };
         virtual CheckResult checkUserPassword(const boost::asio::ip::address& clientAddress,
             std::string_view loginName,
@@ -73,5 +69,5 @@ namespace lms::auth
         virtual void setPassword(db::UserId userId, std::string_view newPassword) = 0;
     };
 
-    std::unique_ptr<IPasswordService> createPasswordService(std::string_view authPasswordBackend, db::Db& db, std::size_t maxThrottlerEntryCount, IAuthTokenService& authTokenService);
+    std::unique_ptr<IPasswordService> createPasswordService(std::string_view backend, db::IDb& db, std::size_t maxThrottlerEntryCount);
 } // namespace lms::auth

@@ -19,23 +19,20 @@
 
 #include "AudioFileResource.hpp"
 
-#include <fstream>
-
 #include <Wt/Http/Response.h>
 
-#include "av/IAudioFile.hpp"
-#include "av/RawResourceHandlerCreator.hpp"
+#include "core/FileResourceHandlerCreator.hpp"
 #include "core/ILogger.hpp"
 #include "core/ITraceLogger.hpp"
 #include "core/String.hpp"
 #include "database/Session.hpp"
-#include "database/Track.hpp"
+#include "database/objects/Track.hpp"
 
 #include "LmsApplication.hpp"
 
 namespace lms::ui
 {
-#define LOG(severity, message) LMS_LOG(UI, severity, "Audio file resource: " << message)
+#define AUDIO_RESOURCE_LOG(severity, message) LMS_LOG(UI, severity, "Audio file resource: " << message)
 
     namespace
     {
@@ -46,7 +43,7 @@ namespace lms::ui
             const db::Track::pointer track{ db::Track::find(LmsApp->getDbSession(), trackId) };
             if (!track)
             {
-                LOG(ERROR, "Missing track");
+                AUDIO_RESOURCE_LOG(ERROR, "Missing track");
                 return std::nullopt;
             }
 
@@ -58,14 +55,14 @@ namespace lms::ui
             const std::string* trackIdParameter{ request.getParameter("trackid") };
             if (!trackIdParameter)
             {
-                LOG(ERROR, "Missing trackid URL parameter!");
+                AUDIO_RESOURCE_LOG(ERROR, "Missing trackid URL parameter!");
                 return std::nullopt;
             }
 
             const std::optional<db::TrackId> trackId{ core::stringUtils::readAs<db::TrackId::ValueType>(*trackIdParameter) };
             if (!trackId)
             {
-                LOG(ERROR, "Bad trackid URL parameter!");
+                AUDIO_RESOURCE_LOG(ERROR, "Bad trackid URL parameter!");
                 return std::nullopt;
             }
 
@@ -88,7 +85,7 @@ namespace lms::ui
     {
         LMS_SCOPED_TRACE_OVERVIEW("UI", "HandleAudioFileRequest");
 
-        std::shared_ptr<IResourceHandler> fileResourceHandler;
+        std::shared_ptr<core::IResourceHandler> fileResourceHandler;
 
         if (!request.continuation())
         {
@@ -96,11 +93,11 @@ namespace lms::ui
             if (!trackPath)
                 return;
 
-            fileResourceHandler = av::createRawResourceHandler(*trackPath);
+            fileResourceHandler = core::createFileResourceHandler(*trackPath);
         }
         else
         {
-            fileResourceHandler = Wt::cpp17::any_cast<std::shared_ptr<IResourceHandler>>(request.continuation()->data());
+            fileResourceHandler = Wt::cpp17::any_cast<std::shared_ptr<core::IResourceHandler>>(request.continuation()->data());
         }
 
         auto* continuation{ fileResourceHandler->processRequest(request, response) };

@@ -19,12 +19,16 @@
 
 #include "Common.hpp"
 
-#include "database/Image.hpp"
+#include "core/PartialDateTime.hpp"
+#include "database/objects/Artwork.hpp"
+#include "database/objects/Image.hpp"
 
 namespace lms::db::tests
 {
+    using ScopedArtwork = ScopedEntity<db::Artwork>;
     using ScopedImage = ScopedEntity<db::Image>;
     using ScopedLabel = ScopedEntity<db::Label>;
+    using ScopedCountry = ScopedEntity<db::Country>;
     using ScopedReleaseType = ScopedEntity<db::ReleaseType>;
 
     TEST_F(DatabaseFixture, Release)
@@ -86,8 +90,8 @@ namespace lms::db::tests
         ScopedRelease release1{ session, "MyRelease1" };
         ScopedRelease release2{ session, "MyRelease2" };
         ScopedRelease release3{ session, "MyRelease3" };
-        ScopedMediaLibrary library{ session };
-        ScopedMediaLibrary otherLibrary{ session };
+        ScopedMediaLibrary library{ session, "MyLibrary", "/root" };
+        ScopedMediaLibrary otherLibrary{ session, "OtherLibrary", "/otherRoot" };
 
         {
             auto transaction{ session.createWriteTransaction() };
@@ -169,6 +173,93 @@ namespace lms::db::tests
         }
     }
 
+    TEST_F(DatabaseFixture, Release_findNextIdRange)
+    {
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            auto range{ Release::findNextIdRange(session, ReleaseId{}, 0) };
+            EXPECT_FALSE(range.isValid());
+            EXPECT_EQ(range.first, ReleaseId{});
+            EXPECT_EQ(range.last, ReleaseId{});
+
+            range = Release::findNextIdRange(session, ReleaseId{}, 100);
+            EXPECT_FALSE(range.isValid());
+            EXPECT_EQ(range.first, ReleaseId{});
+            EXPECT_EQ(range.last, ReleaseId{});
+        }
+
+        ScopedRelease release1{ session, "Artist1" };
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            auto range{ Release::findNextIdRange(session, ReleaseId{}, 0) };
+            EXPECT_FALSE(range.isValid());
+            EXPECT_EQ(range.first, ReleaseId{});
+            EXPECT_EQ(range.last, ReleaseId{});
+
+            range = Release::findNextIdRange(session, ReleaseId{}, 1);
+            EXPECT_TRUE(range.isValid());
+            EXPECT_EQ(range.first, release1.getId());
+            EXPECT_EQ(range.last, release1.getId());
+
+            range = Release::findNextIdRange(session, range.last, 1);
+            EXPECT_FALSE(range.isValid());
+            EXPECT_EQ(range.first, ReleaseId{});
+            EXPECT_EQ(range.last, ReleaseId{});
+
+            range = Release::findNextIdRange(session, ReleaseId{}, 100);
+            EXPECT_TRUE(range.isValid());
+            EXPECT_EQ(range.first, release1.getId());
+            EXPECT_EQ(range.last, release1.getId());
+        }
+
+        ScopedRelease release2{ session, "Artist2" };
+        ScopedRelease release3{ session, "Artist3" };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            auto range{ Release::findNextIdRange(session, ReleaseId{}, 2) };
+            EXPECT_TRUE(range.isValid());
+            EXPECT_EQ(range.first, release1.getId());
+            EXPECT_EQ(range.last, release2.getId());
+
+            range = Release::findNextIdRange(session, release2.getId(), 2);
+            EXPECT_TRUE(range.isValid());
+            EXPECT_EQ(range.first, release3.getId());
+            EXPECT_EQ(range.last, release3.getId());
+        }
+    }
+
+    TEST_F(DatabaseFixture, Release_findByRange)
+    {
+        ScopedRelease release1{ session, "Artist1" };
+        ScopedRelease release2{ session, "Artist2" };
+        ScopedRelease release3{ session, "Artist3" };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            std::size_t count{};
+            Release::find(session, IdRange<ReleaseId>{ .first = release1.getId(), .last = release1.getId() }, [&](const db::Release::pointer& release) {
+                count++;
+                EXPECT_EQ(release->getId(), release1.getId());
+            });
+            EXPECT_EQ(count, 1);
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            std::size_t count{};
+            Release::find(session, IdRange<ReleaseId>{ .first = release1.getId(), .last = release3.getId() }, [&](const db::Release::pointer&) {
+                count++;
+            });
+            EXPECT_EQ(count, 3);
+        }
+    }
+
     TEST_F(DatabaseFixture, Release_singleTrack)
     {
         ScopedRelease release{ session, "MyRelease" };
@@ -233,8 +324,8 @@ namespace lms::db::tests
     {
         ScopedTrack track{ session };
         ScopedRelease release{ session, "MyRelease" };
-        ScopedMediaLibrary library{ session };
-        ScopedMediaLibrary otherLibrary{ session };
+        ScopedMediaLibrary library{ session, "MyLibrary", "/root" };
+        ScopedMediaLibrary otherLibrary{ session, "OtherLibrary", "/otherRoot" };
 
         {
             auto transaction{ session.createWriteTransaction() };
@@ -244,13 +335,13 @@ namespace lms::db::tests
         }
         {
             auto transaction{ session.createReadTransaction() };
-            auto releases{ Release::findIds(session, Release::FindParameters{}.setMediaLibrary(library->getId())) };
+            auto releases{ Release::findIds(session, Release::FindParameters{}.setFilters(Filters{}.setMediaLibrary(library->getId()))) };
             ASSERT_EQ(releases.results.size(), 1);
             EXPECT_EQ(releases.results.front(), release.getId());
         }
         {
             auto transaction{ session.createReadTransaction() };
-            auto releases{ Release::findIds(session, Release::FindParameters{}.setMediaLibrary(otherLibrary->getId())) };
+            auto releases{ Release::findIds(session, Release::FindParameters{}.setFilters(Filters{}.setMediaLibrary(otherLibrary->getId()))) };
             EXPECT_EQ(releases.results.size(), 0);
         }
     }
@@ -462,8 +553,8 @@ namespace lms::db::tests
     {
         ScopedRelease release1{ session, "MyRelease1" };
         ScopedRelease release2{ session, "MyRelease2" };
-        const Wt::WDate release1Date{ Wt::WDate{ 1994, 2, 3 } };
-        const Wt::WDate release1OriginalDate{ Wt::WDate{ 1993, 4, 5 } };
+        const core::PartialDateTime release1Date{ 1994, 2, 3 };
+        const core::PartialDateTime release1OriginalDate{ 1993, 4, 5 };
 
         ScopedTrack track1A{ session };
         ScopedTrack track1B{ session };
@@ -473,7 +564,7 @@ namespace lms::db::tests
         {
             auto transaction{ session.createReadTransaction() };
 
-            const auto releases{ Release::findIds(session, Release::FindParameters{}.setDateRange(DateRange::fromYearRange(0, 3000))) };
+            const auto releases{ Release::findIds(session, Release::FindParameters{}.setDateRange(YearRange{ -3000, 3000 })) };
             EXPECT_EQ(releases.results.size(), 0);
         }
 
@@ -492,20 +583,23 @@ namespace lms::db::tests
 
             EXPECT_EQ(release1.get()->getDate(), release1Date);
             EXPECT_EQ(release1.get()->getOriginalDate(), release1OriginalDate);
+
+            EXPECT_EQ(release1.get()->getYear(), release1Date.getYear());
+            EXPECT_EQ(release1.get()->getOriginalYear(), release1OriginalDate.getYear());
         }
 
         {
             auto transaction{ session.createReadTransaction() };
 
-            auto releases{ Release::findIds(session, Release::FindParameters{}.setDateRange(DateRange::fromYearRange(1950, 2000))) };
+            auto releases{ Release::findIds(session, Release::FindParameters{}.setDateRange(YearRange{ 1950, 2000 })) };
             ASSERT_EQ(releases.results.size(), 1);
             EXPECT_EQ(releases.results.front(), release1.getId());
 
-            releases = Release::findIds(session, Release::FindParameters{}.setDateRange(DateRange::fromYearRange(1994, 1994)));
+            releases = Release::findIds(session, Release::FindParameters{}.setDateRange(YearRange{ 1994, 1994 }));
             ASSERT_EQ(releases.results.size(), 1);
             EXPECT_EQ(releases.results.front(), release1.getId());
 
-            releases = Release::findIds(session, Release::FindParameters{}.setDateRange(DateRange::fromYearRange(1993, 1993)));
+            releases = Release::findIds(session, Release::FindParameters{}.setDateRange(YearRange{ 1993, 1993 }));
             ASSERT_EQ(releases.results.size(), 0);
         }
     }
@@ -525,7 +619,7 @@ namespace lms::db::tests
         {
             auto transaction{ session.createReadTransaction() };
 
-            const auto releases{ Release::findIds(session, Release::FindParameters{}.setDateRange(DateRange::fromYearRange(0, 3000))) };
+            const auto releases{ Release::findIds(session, Release::FindParameters{}.setDateRange(YearRange{ 0, 3000 })) };
             EXPECT_EQ(releases.results.size(), 0);
         }
 
@@ -537,10 +631,10 @@ namespace lms::db::tests
             track2A.get().modify()->setRelease(release2.get());
             track2B.get().modify()->setRelease(release2.get());
 
-            track1A.get().modify()->setYear(release1Year);
-            track1B.get().modify()->setYear(release1Year);
-            track1A.get().modify()->setOriginalYear(release1OriginalYear);
-            track1B.get().modify()->setOriginalYear(release1OriginalYear);
+            track1A.get().modify()->setDate(core::PartialDateTime{ release1Year });
+            track1B.get().modify()->setDate(core::PartialDateTime{ release1Year });
+            track1A.get().modify()->setOriginalDate(core::PartialDateTime{ release1OriginalYear });
+            track1B.get().modify()->setOriginalDate(core::PartialDateTime{ release1OriginalYear });
 
             EXPECT_EQ(release1.get()->getYear(), release1Year);
             EXPECT_EQ(release1.get()->getOriginalYear(), release1OriginalYear);
@@ -549,15 +643,15 @@ namespace lms::db::tests
         {
             auto transaction{ session.createReadTransaction() };
 
-            auto releases{ Release::findIds(session, Release::FindParameters{}.setDateRange(DateRange::fromYearRange(1950, 2000))) };
+            auto releases{ Release::findIds(session, Release::FindParameters{}.setDateRange(YearRange{ 1950, 2000 })) };
             ASSERT_EQ(releases.results.size(), 1);
             EXPECT_EQ(releases.results.front(), release1.getId());
 
-            releases = Release::findIds(session, Release::FindParameters{}.setDateRange(DateRange::fromYearRange(1994, 1994)));
+            releases = Release::findIds(session, Release::FindParameters{}.setDateRange(YearRange{ 1994, 1994 }));
             ASSERT_EQ(releases.results.size(), 1);
             EXPECT_EQ(releases.results.front(), release1.getId());
 
-            releases = Release::findIds(session, Release::FindParameters{}.setDateRange(DateRange::fromYearRange(1993, 1993)));
+            releases = Release::findIds(session, Release::FindParameters{}.setDateRange(YearRange{ 1993, 1993 }));
             ASSERT_EQ(releases.results.size(), 0);
         }
     }
@@ -804,6 +898,30 @@ namespace lms::db::tests
         }
     }
 
+    TEST_F(DatabaseFixture, Release_getLabelNames)
+    {
+        ScopedRelease release{ session, "MyRelease" };
+        ScopedLabel label{ session, "MyLabel" };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            const auto names{ release.get()->getLabelNames() };
+            EXPECT_EQ(names.size(), 0);
+        }
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            release.get().modify()->addLabel(label.get());
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            const auto names{ release.get()->getLabelNames() };
+            ASSERT_EQ(names.size(), 1);
+            EXPECT_EQ(names[0], "MyLabel");
+        }
+    }
+
     TEST_F(DatabaseFixture, Label_orphan)
     {
         ScopedLabel label{ session, "MyLabel" };
@@ -838,6 +956,78 @@ namespace lms::db::tests
             auto labels{ Label::findOrphanIds(session) };
             ASSERT_EQ(labels.results.size(), 1);
             EXPECT_EQ(labels.results.front(), label.getId());
+        }
+    }
+
+    TEST_F(DatabaseFixture, Country)
+    {
+        {
+            auto transaction{ session.createReadTransaction() };
+            Country::pointer res{ Country::find(session, "country") };
+            EXPECT_EQ(res, Country::pointer{});
+        }
+
+        ScopedCountry country{ session, "MyCountry" };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            Country::pointer res{ Country::find(session, "MyCountry") };
+            EXPECT_EQ(res, country.get());
+        }
+    }
+
+    TEST_F(DatabaseFixture, Release_getCountryNames)
+    {
+        ScopedCountry country{ session, "MyCountry" };
+        ScopedRelease release{ session, "MyRelease" };
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            release.get().modify()->addCountry(country.get());
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            const auto names{ release.get()->getCountryNames() };
+            ASSERT_EQ(names.size(), 1);
+            EXPECT_EQ(names[0], "MyCountry");
+        }
+    }
+
+    TEST_F(DatabaseFixture, Country_orphan)
+    {
+        ScopedCountry country{ session, "MyCountry" };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            auto countries{ Country::findOrphanIds(session) };
+            ASSERT_EQ(countries.results.size(), 1);
+            EXPECT_EQ(countries.results.front(), country.getId());
+        }
+
+        ScopedRelease release{ session, "MyRelease" };
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            release.get().modify()->addCountry(country.get());
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            auto countries{ Country::findOrphanIds(session) };
+            EXPECT_EQ(countries.results.size(), 0);
+        }
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            release.get().modify()->clearCountries();
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            auto countries{ Country::findOrphanIds(session) };
+            ASSERT_EQ(countries.results.size(), 1);
+            EXPECT_EQ(countries.results.front(), country.getId());
         }
     }
 
@@ -957,11 +1147,11 @@ namespace lms::db::tests
     TEST_F(DatabaseFixture, Release_sortMethod)
     {
         ScopedRelease release1{ session, "MyRelease1" };
-        const Wt::WDate release1Date{ Wt::WDate{ 2000, 2, 3 } };
-        const Wt::WDate release1OriginalDate{ Wt::WDate{ 1993, 4, 5 } };
+        const core::PartialDateTime release1Date{ 2000, 2, 3 };
+        const core::PartialDateTime release1OriginalDate{ 1993, 4, 5 };
 
         ScopedRelease release2{ session, "MyRelease2" };
-        const Wt::WDate release2Date{ Wt::WDate{ 1994, 2, 3 } };
+        const core::PartialDateTime release2Date{ 1994, 2, 3 };
 
         ScopedTrack track1{ session };
         ScopedTrack track2{ session };
@@ -1094,27 +1284,269 @@ namespace lms::db::tests
         }
     }
 
-    TEST_F(DatabaseFixture, Release_image)
+    TEST_F(DatabaseFixture, Release_artwork)
     {
         ScopedRelease release{ session, "MyRelease" };
 
         {
             auto transaction{ session.createReadTransaction() };
-            EXPECT_FALSE(release.get()->getImage());
+            EXPECT_FALSE(release.get()->getPreferredArtwork());
         }
 
-        ScopedImage image{ session, "/myImage" };
+        ScopedImage image{ session, "/image.jpg" };
+        ScopedArtwork artwork{ session, image.lockAndGet() };
 
         {
             auto transaction{ session.createWriteTransaction() };
-            release.get().modify()->setImage(image.get());
+            release.get().modify()->setPreferredArtwork(artwork.get());
         }
 
         {
             auto transaction{ session.createReadTransaction() };
-            auto releaseImage(release.get()->getImage());
-            ASSERT_TRUE(releaseImage);
-            EXPECT_EQ(releaseImage->getId(), image.getId());
+            auto releaseArtwork(release.get()->getPreferredArtwork());
+            ASSERT_TRUE(releaseArtwork);
+            EXPECT_EQ(releaseArtwork->getId(), artwork.getId());
+        }
+
+        // Check cascade delete
+        {
+            auto transaction{ session.createWriteTransaction() };
+            image.lockAndGet().remove();
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            auto releaseArtwork(release.get()->getPreferredArtwork());
+            ASSERT_FALSE(releaseArtwork);
         }
     }
+
+    TEST_F(DatabaseFixture, Release_sortDateAdded)
+    {
+        ScopedRelease releaseA{ session, "relA" };
+        ScopedRelease releaseB{ session, "relB" };
+        ScopedRelease releaseC{ session, "relC" };
+        ScopedRelease releaseD{ session, "relD" };
+
+        ScopedTrack trackA1{ session };
+        ScopedTrack trackB1{ session };
+        ScopedTrack trackC1{ session };
+        ScopedTrack trackD1{ session };
+
+        ScopedTrack trackA2{ session };
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            trackA1.get().modify()->setAddedTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 2 } });
+            trackB1.get().modify()->setAddedTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 1 } });
+            trackD1.get().modify()->setAddedTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 2 }, Wt::WTime{ 15, 36, 24 } });
+            trackD1.get().modify()->setAddedTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 3 } });
+            trackA2.get().modify()->setAddedTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 4 } });
+
+            trackA1.get().modify()->setRelease(releaseA.get());
+            trackA2.get().modify()->setRelease(releaseA.get());
+            trackB1.get().modify()->setRelease(releaseB.get());
+            trackC1.get().modify()->setRelease(releaseC.get());
+            trackD1.get().modify()->setRelease(releaseD.get());
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            const auto releases{ Release::findIds(session, Release::FindParameters{}.setSortMethod(ReleaseSortMethod::AddedDesc)) };
+            ASSERT_EQ(releases.results.size(), 4);
+            EXPECT_EQ(releases.results[0], releaseA.getId());
+            EXPECT_EQ(releases.results[1], releaseD.getId());
+            EXPECT_EQ(releases.results[2], releaseB.getId());
+            EXPECT_EQ(releases.results[3], releaseC.getId());
+        }
+    }
+
+    TEST_F(DatabaseFixture, Release_sortLastWritten)
+    {
+        ScopedRelease releaseA{ session, "relA" };
+        ScopedRelease releaseB{ session, "relB" };
+        ScopedRelease releaseC{ session, "relC" };
+        ScopedRelease releaseD{ session, "relD" };
+
+        ScopedTrack trackA1{ session };
+        ScopedTrack trackB1{ session };
+        ScopedTrack trackC1{ session };
+        ScopedTrack trackD1{ session };
+
+        ScopedTrack trackA2{ session };
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            trackA1.get().modify()->setLastWriteTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 2 } });
+            trackB1.get().modify()->setLastWriteTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 1 } });
+            trackD1.get().modify()->setLastWriteTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 2 }, Wt::WTime{ 15, 36, 24 } });
+            trackD1.get().modify()->setLastWriteTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 3 } });
+            trackA2.get().modify()->setLastWriteTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 4 } });
+
+            trackA1.get().modify()->setRelease(releaseA.get());
+            trackA2.get().modify()->setRelease(releaseA.get());
+            trackB1.get().modify()->setRelease(releaseB.get());
+            trackC1.get().modify()->setRelease(releaseC.get());
+            trackD1.get().modify()->setRelease(releaseD.get());
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+            const auto releases{ Release::findIds(session, Release::FindParameters{}.setSortMethod(ReleaseSortMethod::LastWrittenDesc)) };
+            ASSERT_EQ(releases.results.size(), 4);
+            EXPECT_EQ(releases.results[0], releaseA.getId());
+            EXPECT_EQ(releases.results[1], releaseD.getId());
+            EXPECT_EQ(releases.results[2], releaseB.getId());
+            EXPECT_EQ(releases.results[3], releaseC.getId());
+        }
+    }
+
+    TEST_F(DatabaseFixture, Release_LastWritten)
+    {
+        ScopedRelease release{ session, "relA" };
+
+        ScopedTrack track1{ session };
+        ScopedTrack track2{ session };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            Wt::WDateTime lastWritten{ release.get()->getLastWrittenTime() };
+            EXPECT_FALSE(lastWritten.isValid());
+        }
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            track1.get().modify()->setLastWriteTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 2 } });
+            track2.get().modify()->setLastWriteTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 2 }, Wt::WTime{ 15, 36, 24 } });
+            track1.get().modify()->setRelease(release.get());
+            track2.get().modify()->setRelease(release.get());
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            Wt::WDateTime lastWritten{ release.get()->getLastWrittenTime() };
+            ASSERT_TRUE(lastWritten.isValid());
+            EXPECT_EQ(lastWritten, track2.get()->getLastWriteTime());
+        }
+    }
+
+    TEST_F(DatabaseFixture, Release_AddedTime)
+    {
+        ScopedRelease release{ session, "relA" };
+
+        ScopedTrack track1{ session };
+        ScopedTrack track2{ session };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            const Wt::WDateTime addedTime{ release.get()->getAddedTime() };
+            EXPECT_FALSE(addedTime.isValid());
+        }
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            track1.get().modify()->setAddedTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 2 } });
+            track2.get().modify()->setAddedTime(Wt::WDateTime{ Wt::WDate{ 2021, 1, 2 }, Wt::WTime{ 15, 36, 24 } });
+            track1.get().modify()->setRelease(release.get());
+            track2.get().modify()->setRelease(release.get());
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            const Wt::WDateTime addedTime{ release.get()->getAddedTime() };
+            ASSERT_TRUE(addedTime.isValid());
+            EXPECT_EQ(addedTime, track2.get()->getAddedTime());
+        }
+    }
+
+    TEST_F(DatabaseFixture, Release_groupMBID)
+    {
+        ScopedRelease release{ session, "relA" };
+        const std::optional<core::UUID> groupMBID{ core::UUID::fromString("1ad8f716-2fd6-4d09-8ada-39525947217c") };
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            const auto releases{ Release::find(session, Release::FindParameters{}.setReleaseGroupMBID(groupMBID)) };
+            EXPECT_EQ(releases.results.size(), 0);
+        }
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            release.get().modify()->setGroupMBID(groupMBID);
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            const auto releases{ Release::find(session, Release::FindParameters{}.setReleaseGroupMBID(groupMBID)) };
+            EXPECT_EQ(releases.results.size(), 1);
+            EXPECT_EQ(releases.results[0]->getId(), release->getId());
+        }
+    }
+
+    TEST_F(DatabaseFixture, Release_sortName)
+    {
+        ScopedRelease release1{ session, "MyRelease1" };
+        ScopedRelease release2{ session, "MyRelease2" };
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            release1.get().modify()->setSortName("BB");
+            release2.get().modify()->setSortName("AA");
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            const auto releases{ Release::find(session, Release::FindParameters{}.setSortMethod(ReleaseSortMethod::Name)) };
+            ASSERT_EQ(releases.results.size(), 2);
+            EXPECT_EQ(releases.results[0]->getId(), release1->getId());
+            EXPECT_EQ(releases.results[1]->getId(), release2->getId());
+        }
+
+        {
+            auto transaction{ session.createReadTransaction() };
+
+            const auto releases{ Release::find(session, Release::FindParameters{}.setSortMethod(ReleaseSortMethod::SortName)) };
+            ASSERT_EQ(releases.results.size(), 2);
+            EXPECT_EQ(releases.results[0]->getId(), release2->getId());
+            EXPECT_EQ(releases.results[1]->getId(), release1->getId());
+        }
+    }
+
+    TEST_F(DatabaseFixture, Release_updateArtwork)
+    {
+        ScopedRelease release{ session, "MyRelease" };
+        {
+            auto transaction{ session.createReadTransaction() };
+            EXPECT_EQ(release->getPreferredArtwork(), Artwork::pointer{});
+        }
+
+        ScopedImage image{ session, "/image1.jpg" };
+        ScopedArtwork artwork{ session, image.lockAndGet() };
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            Release::updatePreferredArtwork(session, release->getId(), artwork.getId());
+        }
+        {
+            auto transaction{ session.createReadTransaction() };
+            EXPECT_EQ(release->getPreferredArtwork()->getId(), artwork.getId());
+        }
+
+        {
+            auto transaction{ session.createWriteTransaction() };
+            Release::updatePreferredArtwork(session, release.getId(), ArtworkId{});
+        }
+        {
+            auto transaction{ session.createReadTransaction() };
+            EXPECT_EQ(release->getPreferredArtwork(), Artwork::pointer{});
+        }
+    }
+
 } // namespace lms::db::tests
